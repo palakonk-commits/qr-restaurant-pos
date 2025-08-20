@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCode from 'react-qr-code';
-import { useAppContext } from '../context/AppContext';
-import { Order, QrSession } from '../types';
+import { useAppContext, encodeState } from '../context/AppContext';
+import { AppState } from '../types';
 
 const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) => {
     const { sessionId, orderId } = useParams();
-    const { getQrSession, orders, settings, getLocalized, t, tables } = useAppContext();
+    const context = useAppContext();
+    const { getQrSession, orders, settings, getLocalized, t, tables } = context;
 
     useEffect(() => {
         setTimeout(() => {
@@ -15,16 +16,14 @@ const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) =
         }, 500); // Delay to ensure content is rendered
     }, []);
 
-    const getAbsoluteUrl = (hashPath: string) => {
+    const getAbsoluteUrlWithState = (hashPath: string, state: AppState) => {
         const { origin, pathname } = window.location;
-        // This ensures a clean base URL, removing any potential `index.html` or query strings
-        // that exist in sandboxed environments like Google Studio.
-        const cleanBaseUrl = `${origin}${pathname.endsWith('/') ? pathname : `${pathname}/`}`;
-        const finalUrl = new URL(cleanBaseUrl);
-        finalUrl.hash = hashPath;
-        // Use href, but remove the trailing slash before the hash if it exists.
-        return finalUrl.href.replace(/\/$/, '');
+        const cleanPath = pathname.replace(/index\.html$/, '');
+        const baseUrl = `${origin}${cleanPath}`;
+        const encodedState = encodeState(state);
+        return `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}${hashPath}&state=${encodedState}`;
     };
+
 
     const renderContent = () => {
         if (printType === 'qr' && sessionId) {
@@ -32,7 +31,19 @@ const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) =
             const table = session?.tableId ? tables.find(t => t.id === session.tableId) : null;
             if (!session) return <div>Invalid Session ID</div>;
             
-            const qrUrl = getAbsoluteUrl(`#/menu/${session.id}`);
+            const appState: AppState = {
+                currentUser: context.currentUser,
+                users: context.users,
+                menuItems: context.menuItems,
+                menuCategories: context.menuCategories,
+                orders: context.orders,
+                qrSessions: context.qrSessions,
+                auditLogs: context.auditLogs,
+                tables: context.tables,
+                settings: context.settings,
+                lastQueueNumber: context.lastQueueNumber
+            };
+            const qrUrl = getAbsoluteUrlWithState(`/#/menu/${session.id}?`, appState);
 
             return (
                 <div className="text-center">

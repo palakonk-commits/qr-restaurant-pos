@@ -1,6 +1,49 @@
+
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import pako from 'pako';
 import { User, UserRole, MenuItem, MenuCategory, Order, OrderStatus, QrSession, AuditLog, Settings, ServiceType, CartItem, PaymentMethod, Table, TableStatus, AppState } from '../types';
 import { useLocalization } from '../hooks/useLocalization';
+
+// --- STATE SERIALIZATION HELPERS ---
+// Encodes the entire app state into a URL-safe, compressed string
+export const encodeState = (state: AppState): string => {
+  const jsonString = JSON.stringify(state);
+  const compressed = pako.deflate(jsonString);
+  let binaryString = '';
+  compressed.forEach(byte => {
+    binaryString += String.fromCharCode(byte);
+  });
+  return btoa(binaryString)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+};
+
+// Decodes the state from a URL param
+const decodeState = (encodedState: string): AppState | null => {
+  try {
+    let base64 = encodedState.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    const binaryString = atob(base64);
+    const compressed = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        compressed[i] = binaryString.charCodeAt(i);
+    }
+    const jsonString = pako.inflate(compressed, { to: 'string' });
+    const parsed = JSON.parse(jsonString);
+    // Dates are stored as strings, need to convert them back
+    parsed.orders = parsed.orders.map((o: Order) => ({ ...o, createdAt: new Date(o.createdAt), paidAt: o.paidAt ? new Date(o.paidAt) : undefined }));
+    parsed.qrSessions = parsed.qrSessions.map((s: QrSession) => ({ ...s, createdAt: new Date(s.createdAt) }));
+    parsed.auditLogs = parsed.auditLogs.map((l: AuditLog) => ({...l, timestamp: new Date(l.timestamp) }));
+    return parsed;
+  } catch (e) {
+    console.error("Failed to decode state from URL", e);
+    return null;
+  }
+};
+
 
 // --- MOCK/INITIAL DATA ---
 const MOCK_USERS: User[] = [
@@ -41,6 +84,19 @@ const MOCK_TABLES: Table[] = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 const getInitialState = (): AppState => {
+    // 1. Check for state in URL (for customer QR scans)
+    const urlParams = new URLSearchParams(window.location.hash.split('?')[1]);
+    const stateFromUrl = urlParams.get('state');
+    if (stateFromUrl) {
+        const decoded = decodeState(stateFromUrl);
+        if (decoded) {
+            console.log("State successfully loaded from URL.");
+            // This instance is for a customer, so we don't need to persist their view.
+            // We just use the state from the QR.
+            return { ...decoded, currentUser: null }; // Always start logged out
+        }
+    }
+
     const defaultState: AppState = {
         currentUser: null,
         users: MOCK_USERS,
@@ -106,16 +162,22 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [state, setState] = useState<AppState>(getInitialState);
     const { language, setLanguage, t, getLocalized } = useLocalization();
+    
+    // Check if the current instance is a customer view from a shared state URL.
+    // If so, don't persist to localStorage to avoid overwriting the cashier's state.
+    const isSharedState = new URLSearchParams(window.location.hash.split('?')[1]).has('state');
+
 
     // Persist state to localStorage on every change
     useEffect(() => {
+        if (isSharedState) return;
         try {
             const stateToSave = { ...state, currentUser: null }; // Don't persist logged-in user
             localStorage.setItem('pos_app_state', JSON.stringify(stateToSave));
         } catch (error) {
             console.error("Could not save state to localStorage", error);
         }
-    }, [state]);
+    }, [state, isSharedState]);
 
     const addAuditLog = useCallback((action: string, details: string, user: User) => {
         const newLog: AuditLog = {
@@ -225,6 +287,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     const createOrderFromCart = (qrId: string, cart: CartItem[], serviceType: ServiceType): Order | null => {
         let createdOrder: Order | null = null;
+        // This is a CUSTOMER action. The state update will be sent back to the cashier.
+        // In this simulation, we can't send it back. The cashier's state will become out of sync.
+        // This is a fundamental limitation of the frontend-only approach.
+        // The order will appear on the KDS if paid, but the original cashier won't see it until refresh.
+        // For this project, we accept this limitation. The order IS created.
         setState(prevState => {
             const session = prevState.qrSessions.find(s => s.id === qrId);
             if (!session || session.status !== 'active') return prevState;
@@ -243,12 +310,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 createdBy: 'Customer',
             };
             createdOrder = newOrder;
-            return {
+            
+            // We need to update localStorage on the cashier's machine, which we can't do from the customer's browser.
+            // The best we can do is update the state in the customer's own context.
+            const newState = {
                 ...prevState,
                 lastQueueNumber: newQueueNumber,
                 orders: [...prevState.orders, newOrder],
-                qrSessions: prevState.qrSessions.map(s => s.id === qrId ? { ...s, status: 'used', orderId: newOrder.id } : s)
+                qrSessions: prevState.qrSessions.map(s => s.id === qrId ? { ...s, status: 'used' as const, orderId: newOrder.id } : s)
             };
+            
+            // To simulate the update, we can try to post a message. For now, this is a known limitation.
+            console.warn("Limitation: Order created on customer device. Cashier view will not update in real-time.");
+
+            return newState;
         });
         return createdOrder;
     };

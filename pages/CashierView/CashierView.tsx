@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useAppContext } from '../../context/AppContext';
-import { Order, OrderStatus, Table, TableStatus } from '../../types';
+import { useAppContext, encodeState } from '../../context/AppContext';
+import { Order, OrderStatus, Table, TableStatus, AppState } from '../../types';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import QRCode from "react-qr-code";
@@ -22,7 +22,8 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
 };
 
 const NewQRTab: React.FC = () => {
-    const { createQrSession, t, tables, addTable, removeTable, getQrSession, cancelQrSession, forceClearTable } = useAppContext();
+    const context = useAppContext();
+    const { createQrSession, t, tables, addTable, removeTable, getQrSession, cancelQrSession, forceClearTable } = context;
     const [activeQr, setActiveQr] = useState<{ sessionId: string; tableId: string } | null>(null);
     const [isEditingFloorPlan, setIsEditingFloorPlan] = useState(false);
     const [confirmation, setConfirmation] = useState<{
@@ -68,24 +69,39 @@ const NewQRTab: React.FC = () => {
         }
         setActiveQr(null);
     };
+    
+    const getAbsoluteUrlWithState = (hashPath: string, state: AppState) => {
+        const { origin, pathname } = window.location;
+        const cleanPath = pathname.replace(/index\.html$/, '');
+        const baseUrl = `${origin}${cleanPath}`;
+        const encodedState = encodeState(state);
+        return `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}${hashPath}&state=${encodedState}`;
+    };
 
     const handlePrint = () => {
         if (!activeQr) return;
         const url = `#/print/qr/${activeQr.sessionId}`;
         window.open(url, '_blank', 'width=302,height=500'); // Approx width for thermal printer slip
     };
-
-    // Correctly build the QR Code URL to be environment-agnostic
-    const getAbsoluteUrl = (hashPath: string) => {
-        const { origin, pathname } = window.location;
-        // This ensures a clean base URL, removing any potential `index.html` or query strings
-        // that exist in sandboxed environments like Google Studio.
-        const cleanPath = pathname.replace(/index\.html$/, '');
-        const baseUrl = `${origin}${cleanPath}`;
-        return `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}${hashPath}`;
-    };
     
-    const qrUrl = activeQr ? getAbsoluteUrl(`/#/menu/${activeQr.sessionId}`) : '';
+    let qrUrl = '';
+    if (activeQr) {
+        // Cast context to AppState to pass to encoder
+        const appState: AppState = {
+            currentUser: context.currentUser,
+            users: context.users,
+            menuItems: context.menuItems,
+            menuCategories: context.menuCategories,
+            orders: context.orders,
+            qrSessions: context.qrSessions,
+            auditLogs: context.auditLogs,
+            tables: context.tables,
+            settings: context.settings,
+            lastQueueNumber: context.lastQueueNumber
+        };
+        qrUrl = getAbsoluteUrlWithState(`/#/menu/${activeQr.sessionId}?`, appState);
+    }
+
     const selectedTable = activeQr ? tables.find(t => t.id === activeQr.tableId) : null;
 
     return (
