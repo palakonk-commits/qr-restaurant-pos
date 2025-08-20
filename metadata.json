@@ -1,0 +1,5 @@
+{
+  "name": "QR Restaurant POS",
+  "description": "A comprehensive Point of Sale system for restaurants featuring a disposable QR code ordering flow and pay-at-the-counter functionality. It includes role-based access for cashiers, kitchen staff, managers, and auditors, with multi-language support.",
+  "requestFramePermissions": []
+}
