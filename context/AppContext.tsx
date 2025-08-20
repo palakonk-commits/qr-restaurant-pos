@@ -168,7 +168,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isSharedState = new URLSearchParams(window.location.hash.split('?')[1]).has('state');
 
 
-    // Persist state to localStorage on every change
+    // Persist state to localStorage on every change, UNLESS it's a customer view.
+    // The customer view will persist its state manually upon order creation.
     useEffect(() => {
         if (isSharedState) return;
         try {
@@ -178,6 +179,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             console.error("Could not save state to localStorage", error);
         }
     }, [state, isSharedState]);
+    
+    // Listen for changes in localStorage from other tabs (i.e., customer orders)
+    useEffect(() => {
+        const handleStorageChange = (event: StorageEvent) => {
+            if (event.key === 'pos_app_state' && event.newValue) {
+                try {
+                    const parsed = JSON.parse(event.newValue);
+                    // Rehydrate dates
+                    parsed.orders = parsed.orders.map((o: Order) => ({ ...o, createdAt: new Date(o.createdAt), paidAt: o.paidAt ? new Date(o.paidAt) : undefined }));
+                    parsed.qrSessions = parsed.qrSessions.map((s: QrSession) => ({ ...s, createdAt: new Date(s.createdAt) }));
+                    parsed.auditLogs = parsed.auditLogs.map((l: AuditLog) => ({...l, timestamp: new Date(l.timestamp) }));
+                    
+                    // Update state but preserve the current logged-in user
+                    setState(prevState => ({...parsed, currentUser: prevState.currentUser }));
+                } catch (e) {
+                    console.error("Failed to parse state from storage event", e);
+                }
+            }
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+        };
+    }, []);
+
 
     const addAuditLog = useCallback((action: string, details: string, user: User) => {
         const newLog: AuditLog = {
@@ -287,11 +315,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     const createOrderFromCart = (qrId: string, cart: CartItem[], serviceType: ServiceType): Order | null => {
         let createdOrder: Order | null = null;
-        // This is a CUSTOMER action. The state update will be sent back to the cashier.
-        // In this simulation, we can't send it back. The cashier's state will become out of sync.
-        // This is a fundamental limitation of the frontend-only approach.
-        // The order will appear on the KDS if paid, but the original cashier won't see it until refresh.
-        // For this project, we accept this limitation. The order IS created.
+        
         setState(prevState => {
             const session = prevState.qrSessions.find(s => s.id === qrId);
             if (!session || session.status !== 'active') return prevState;
@@ -311,8 +335,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
             createdOrder = newOrder;
             
-            // We need to update localStorage on the cashier's machine, which we can't do from the customer's browser.
-            // The best we can do is update the state in the customer's own context.
             const newState = {
                 ...prevState,
                 lastQueueNumber: newQueueNumber,
@@ -320,8 +342,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 qrSessions: prevState.qrSessions.map(s => s.id === qrId ? { ...s, status: 'used' as const, orderId: newOrder.id } : s)
             };
             
-            // To simulate the update, we can try to post a message. For now, this is a known limitation.
-            console.warn("Limitation: Order created on customer device. Cashier view will not update in real-time.");
+            // CRITICAL FIX: The customer's tab must write the new state back to localStorage
+            // so that the cashier/KDS tabs can pick it up via the 'storage' event listener.
+            try {
+                const stateToSave = { ...newState, currentUser: null }; // Always save as logged out
+                localStorage.setItem('pos_app_state', JSON.stringify(stateToSave));
+            } catch (error) {
+                console.error("Customer could not save state to localStorage", error);
+            }
 
             return newState;
         });
