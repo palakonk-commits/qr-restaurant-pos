@@ -169,7 +169,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 
     // Persist state to localStorage on every change, UNLESS it's a customer view.
-    // The customer view will persist its state manually upon order creation.
     useEffect(() => {
         if (isSharedState) return;
         try {
@@ -314,46 +313,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     
     const createOrderFromCart = (qrId: string, cart: CartItem[], serviceType: ServiceType): Order | null => {
-        let createdOrder: Order | null = null;
-        
-        setState(prevState => {
-            const session = prevState.qrSessions.find(s => s.id === qrId);
-            if (!session || session.status !== 'active') return prevState;
-
-            const newQueueNumber = prevState.lastQueueNumber + 1;
-            const { subtotal, vat, serviceCharge, total } = calculateTotals(cart, prevState.settings);
-            const newOrder: Order = {
-                id: `order-${Date.now()}`,
-                qrSessionId: qrId,
-                queueNumber: newQueueNumber,
-                items: cart.map(item => ({...item, id: `item-${Math.random()}`})),
-                serviceType,
-                status: OrderStatus.Unpaid,
-                subtotal, vat, serviceCharge, discount: 0, total,
-                createdAt: new Date(),
-                createdBy: 'Customer',
-            };
-            createdOrder = newOrder;
-            
-            const newState = {
-                ...prevState,
-                lastQueueNumber: newQueueNumber,
-                orders: [...prevState.orders, newOrder],
-                qrSessions: prevState.qrSessions.map(s => s.id === qrId ? { ...s, status: 'used' as const, orderId: newOrder.id } : s)
-            };
-            
-            // CRITICAL FIX: The customer's tab must write the new state back to localStorage
-            // so that the cashier/KDS tabs can pick it up via the 'storage' event listener.
-            try {
-                const stateToSave = { ...newState, currentUser: null }; // Always save as logged out
-                localStorage.setItem('pos_app_state', JSON.stringify(stateToSave));
-            } catch (error) {
-                console.error("Customer could not save state to localStorage", error);
+        // 1. Read the LATEST state from localStorage to prevent overwriting recent changes from other tabs.
+        let latestState: AppState;
+        try {
+            const savedState = localStorage.getItem('pos_app_state');
+            if (!savedState) {
+                console.error("Cannot create order, master state not found in localStorage.");
+                return null;
             }
+            latestState = JSON.parse(savedState);
+            // Rehydrate dates from the master copy
+            latestState.orders = latestState.orders.map((o: Order) => ({ ...o, createdAt: new Date(o.createdAt), paidAt: o.paidAt ? new Date(o.paidAt) : undefined }));
+            latestState.qrSessions = latestState.qrSessions.map((s: QrSession) => ({ ...s, createdAt: new Date(s.createdAt) }));
+            latestState.auditLogs = latestState.auditLogs.map((l: AuditLog) => ({...l, timestamp: new Date(l.timestamp) }));
+        } catch(e) {
+            console.error("Failed to read master state from localStorage.", e);
+            return null; // Don't proceed if we can't get the latest state
+        }
+        
+        // 2. Validate session against the LATEST state
+        const session = latestState.qrSessions.find(s => s.id === qrId);
+        if (!session || session.status !== 'active') {
+            console.error("QR Session is invalid or already used.");
+            return null;
+        }
 
-            return newState;
-        });
-        return createdOrder;
+        // 3. Create the new order based on the LATEST state
+        const newQueueNumber = latestState.lastQueueNumber + 1;
+        const { subtotal, vat, serviceCharge, total } = calculateTotals(cart, latestState.settings);
+        const newOrder: Order = {
+            id: `order-${Date.now()}`,
+            qrSessionId: qrId,
+            queueNumber: newQueueNumber,
+            items: cart.map(item => ({...item, id: `item-${Math.random()}`})),
+            serviceType,
+            status: OrderStatus.Unpaid,
+            subtotal, vat, serviceCharge, discount: 0, total,
+            createdAt: new Date(),
+            createdBy: 'Customer',
+        };
+        
+        // 4. Construct the final state to be saved
+        const finalState: AppState = {
+            ...latestState,
+            lastQueueNumber: newQueueNumber,
+            orders: [...latestState.orders, newOrder],
+            qrSessions: latestState.qrSessions.map(s => s.id === qrId ? { ...s, status: 'used' as const, orderId: newOrder.id } : s)
+        };
+
+        // 5. Write the final state to localStorage to trigger sync on other tabs
+        try {
+            const stateToSave = { ...finalState, currentUser: null }; // Always save as logged out
+            localStorage.setItem('pos_app_state', JSON.stringify(stateToSave));
+        } catch (error) {
+            console.error("Customer could not save state to localStorage", error);
+            return null;
+        }
+        
+        // 6. Update the local state of this customer tab to match
+        setState(finalState);
+        
+        // 7. Return the created order so navigation can happen
+        return newOrder;
     };
 
     const markOrderAsPaid = (orderId: string, paymentMethod: PaymentMethod) => {
