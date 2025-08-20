@@ -93,9 +93,10 @@ const translations: { [key: string]: { [key: string]: string } } = {
     'yourOrder': 'Your Order',
     'queueNumber': 'Queue Number',
     'orderStatus': 'Order Status',
+    'orderSentToKitchen': 'Sent to Kitchen',
 
     // Order Statuses
-    'Unpaid': 'Unpaid',
+    'Unpaid': 'Waiting for Payment',
     'Paid': 'Paid',
     'Preparing': 'Preparing',
     'Ready': 'Ready for Pickup',
@@ -229,6 +230,7 @@ const translations: { [key: string]: { [key: string]: string } } = {
     'yourOrder': 'ออร์เดอร์ของคุณ',
     'queueNumber': 'หมายเลขคิว',
     'orderStatus': 'สถานะออร์เดอร์',
+    'orderSentToKitchen': 'ส่งไปที่ครัวแล้ว',
     
     // Order Statuses
     'Unpaid': 'รอชำระเงิน',

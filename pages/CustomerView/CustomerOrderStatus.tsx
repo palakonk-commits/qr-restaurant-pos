@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
@@ -47,6 +46,8 @@ const CustomerOrderStatus: React.FC = () => {
         return <div className="p-8 text-center text-rose-500">Order not found.</div>
     }
 
+    const isUnpaidCustomerOrder = order.status === OrderStatus.Unpaid;
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-sky-50 via-slate-50 to-white dark:from-sky-950 dark:via-slate-900 dark:to-slate-900 text-slate-800 dark:text-slate-200 flex flex-col items-center justify-center p-4">
              <div className="absolute top-4 right-4">
@@ -63,10 +64,12 @@ const CustomerOrderStatus: React.FC = () => {
 
                 <div className="bg-slate-100/80 dark:bg-slate-700/50 rounded-lg p-6">
                     <p className="text-lg text-slate-600 dark:text-slate-300">{t('orderStatus')}</p>
-                    <p className="text-4xl font-bold my-2">{t(order.status)}</p>
+                    <p className="text-4xl font-bold my-2">
+                        {isUnpaidCustomerOrder ? t('orderSentToKitchen') : t(order.status)}
+                    </p>
                     
-                    {order.status !== OrderStatus.Unpaid && order.status !== OrderStatus.Cancelled &&
-                        <StatusTimeline status={order.status} />
+                    {order.status !== OrderStatus.Cancelled &&
+                        <StatusTimeline status={isUnpaidCustomerOrder ? OrderStatus.Paid : order.status} />
                     }
                      {order.status === OrderStatus.Cancelled &&
                         <p className="mt-4 text-rose-500">This order has been cancelled.</p>
