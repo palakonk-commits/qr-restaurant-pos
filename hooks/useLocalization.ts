@@ -73,6 +73,8 @@ const translations: { [key: string]: { [key: string]: string } } = {
     'floorPlan': 'Floor Plan',
     'editFloorPlan': 'Edit Floor Plan',
     'clearTable': 'Clear Table',
+    'confirmCancelOrderTitle': 'Confirm Order Cancellation',
+    'confirmCancelOrderMessage': 'Are you sure you want to cancel this order? This action cannot be undone.',
 
 
     // Customer View
@@ -208,6 +210,8 @@ const translations: { [key: string]: { [key: string]: string } } = {
     'floorPlan': 'แผนผังโต๊ะ',
     'editFloorPlan': 'แก้ไขผังโต๊ะ',
     'clearTable': 'เคลียร์โต๊ะ',
+    'confirmCancelOrderTitle': 'ยืนยันการยกเลิกออร์เดอร์',
+    'confirmCancelOrderMessage': 'คุณแน่ใจหรือไม่ว่าต้องการยกเลิกออร์เดอร์นี้? การกระทำนี้ไม่สามารถย้อนกลับได้',
 
     // Customer View
     'welcome': 'ยินดีต้อนรับ!',

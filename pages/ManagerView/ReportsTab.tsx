@@ -59,7 +59,7 @@ const ReportsTab: React.FC<{ isReadOnly?: boolean }> = ({ isReadOnly = false }) 
 
 
     return (
-        <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow space-y-6">
+        <div className="p-0 sm:p-4 space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold">{t('reports')}</h2>
                 {!isReadOnly && <Button onClick={exportToCSV}>{t('exportToCSV')}</Button>}
@@ -68,14 +68,14 @@ const ReportsTab: React.FC<{ isReadOnly?: boolean }> = ({ isReadOnly = false }) 
             {/* Sales Summary */}
             <div>
                 <h3 className="text-lg font-semibold mb-2">{t('salesSummary')}</h3>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg text-center">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{t('totalRevenue')}</p>
-                        <p className="text-2xl font-bold">{salesSummary.totalRevenue.toFixed(2)}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-100 dark:bg-slate-700/50 rounded-xl">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{t('totalRevenue')}</p>
+                        <p className="text-3xl font-bold">{salesSummary.totalRevenue.toFixed(2)}</p>
                     </div>
-                     <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg text-center">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{t('totalOrders')}</p>
-                        <p className="text-2xl font-bold">{salesSummary.totalOrders}</p>
+                     <div className="p-4 bg-slate-100 dark:bg-slate-700/50 rounded-xl">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{t('totalOrders')}</p>
+                        <p className="text-3xl font-bold">{salesSummary.totalOrders}</p>
                     </div>
                 </div>
             </div>
@@ -83,18 +83,18 @@ const ReportsTab: React.FC<{ isReadOnly?: boolean }> = ({ isReadOnly = false }) 
             {/* Top Selling Items */}
             <div>
                  <h3 className="text-lg font-semibold mb-2">{t('topSellingItems')}</h3>
-                 <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
+                 <div className="bg-slate-100 dark:bg-slate-700/50 rounded-xl p-4">
                      {topSellingItems.length > 0 ? (
-                        <ul className="space-y-2">
+                        <ul className="space-y-3">
                             {topSellingItems.map(item => (
-                                <li key={getLocalized(item.name)} className="flex justify-between">
+                                <li key={getLocalized(item.name)} className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-600 last:border-0 last:pb-0">
                                     <span>{getLocalized(item.name)}</span>
-                                    <span className="font-bold">{item.count}</span>
+                                    <span className="font-bold bg-slate-200 dark:bg-slate-600 text-sm px-2 py-1 rounded-md">{item.count}</span>
                                 </li>
                             ))}
                         </ul>
                      ) : (
-                        <p className="text-gray-500 text-center">No sales data yet.</p>
+                        <p className="text-slate-500 text-center py-4">No sales data yet.</p>
                      )}
                  </div>
             </div>

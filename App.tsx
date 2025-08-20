@@ -33,7 +33,7 @@ const AppRoutes = () => {
   return (
     <div className="flex flex-col h-screen">
       <Header />
-      <main className="flex-grow p-4 overflow-auto">
+      <main className="flex-grow p-4 sm:p-6 lg:p-8 overflow-auto bg-slate-100 dark:bg-slate-900">
         <Routes>
           <Route path="/menu/:qrId" element={<CustomerMenu />} />
           <Route path="/order/:orderId"element={<CustomerOrderStatus />} />

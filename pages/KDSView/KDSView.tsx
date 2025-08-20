@@ -7,13 +7,13 @@ import Button from '../../components/common/Button';
 const OrderItemTicket: React.FC<{ item: OrderItem }> = ({ item }) => {
     const { getLocalized } = useAppContext();
     return (
-        <div className="py-2 border-b dark:border-gray-600 last:border-b-0">
+        <div className="py-2 border-b border-slate-200 dark:border-slate-700 last:border-b-0">
             <p className="font-bold">{item.quantity}x {getLocalized(item.menuItem.name)}</p>
-            <div className="pl-4 text-sm text-gray-600 dark:text-gray-400">
+            <div className="pl-4 text-sm text-slate-600 dark:text-slate-400">
                 {Object.values(item.selectedOptions).map(opt => (
                     <p key={getLocalized(opt.name)}>+ {getLocalized(opt.name)}</p>
                 ))}
-                {item.notes && <p className="italic text-red-500">Notes: {item.notes}</p>}
+                {item.notes && <p className="italic text-rose-500">Notes: {item.notes}</p>}
             </div>
         </div>
     );
@@ -21,16 +21,16 @@ const OrderItemTicket: React.FC<{ item: OrderItem }> = ({ item }) => {
 
 const OrderTicket: React.FC<{ order: Order }> = ({ order }) => {
     const { updateOrderStatus, t, getLocalized } = useAppContext();
-    const timeSincePaid = order.paidAt ? Math.floor((new Date().getTime() - new Date(order.paidAt).getTime()) / 60000) : 0;
+    const timeSinceOrderPlaced = Math.floor((new Date().getTime() - new Date(order.createdAt).getTime()) / 60000);
     
     const getBackgroundColor = () => {
-        if (timeSincePaid > 10) return 'bg-red-200 dark:bg-red-900 border-red-500'; // Over 10 mins
-        if (timeSincePaid > 5) return 'bg-yellow-100 dark:bg-yellow-900 border-yellow-500'; // Over 5 mins
-        return 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600';
+        if (timeSinceOrderPlaced > 10) return 'bg-rose-50 dark:bg-rose-900/40 border-rose-400'; // Over 10 mins
+        if (timeSinceOrderPlaced > 5) return 'bg-amber-50 dark:bg-amber-900/40 border-amber-400'; // Over 5 mins
+        return 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600';
     };
 
     const handleNextStep = () => {
-        if (order.status === OrderStatus.Paid) {
+        if (order.status === OrderStatus.Unpaid || order.status === OrderStatus.Paid) {
             updateOrderStatus(order.id, OrderStatus.Preparing);
         } else if (order.status === OrderStatus.Preparing) {
             updateOrderStatus(order.id, OrderStatus.Ready);
@@ -40,20 +40,25 @@ const OrderTicket: React.FC<{ order: Order }> = ({ order }) => {
     };
     
     const nextStepText = () => {
-        if (order.status === OrderStatus.Paid) return t('startCooking');
+        if (order.status === OrderStatus.Unpaid || order.status === OrderStatus.Paid) return t('startCooking');
         if (order.status === OrderStatus.Preparing) return t('markAsReady');
         if (order.status === OrderStatus.Ready) return t('markAsServed');
         return '';
     };
 
     return (
-        <div className={`rounded-lg shadow-lg border-2 flex flex-col h-full ${getBackgroundColor()}`}>
-            <div className="p-4 border-b-2 dark:border-gray-600 flex justify-between items-center">
+        <div className={`rounded-xl shadow-md border-2 flex flex-col h-full ${getBackgroundColor()}`}>
+            <div className="p-4 border-b-2 border-slate-200 dark:border-slate-700 flex justify-between items-center">
                 <div>
-                    <h3 className="font-extrabold text-2xl">#{order.queueNumber}</h3>
+                    <div className="flex items-center mb-1">
+                        <h3 className="font-extrabold text-2xl">#{order.queueNumber}</h3>
+                        {order.status === OrderStatus.Unpaid && (
+                            <span className="ml-2 text-xs font-bold uppercase bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 px-2 py-1 rounded-full">{t('unpaid')}</span>
+                        )}
+                    </div>
                     <p className="text-sm font-semibold">{t(order.serviceType)}</p>
                 </div>
-                <div className="text-xl font-bold text-right">{timeSincePaid} min</div>
+                <div className="text-xl font-bold text-right">{timeSinceOrderPlaced} min</div>
             </div>
             <div className="p-4 space-y-2 flex-grow overflow-y-auto">
                 {order.items.map(item => (
@@ -61,7 +66,7 @@ const OrderTicket: React.FC<{ order: Order }> = ({ order }) => {
                 ))}
             </div>
             {nextStepText() && (
-                 <div className="p-3 bg-gray-50 dark:bg-gray-900">
+                 <div className="p-3 bg-white/50 dark:bg-slate-900/50 rounded-b-lg">
                     <Button onClick={handleNextStep} className="w-full py-3 text-lg">
                         {nextStepText()}
                     </Button>
@@ -76,15 +81,15 @@ const KDSView: React.FC = () => {
 
     const activeOrders = useMemo(() => {
         return orders
-            .filter(o => [OrderStatus.Paid, OrderStatus.Preparing, OrderStatus.Ready].includes(o.status))
+            .filter(o => [OrderStatus.Unpaid, OrderStatus.Paid, OrderStatus.Preparing, OrderStatus.Ready].includes(o.status))
             .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     }, [orders]);
     
     return (
-        <div className="p-4 h-full">
+        <div className="p-0 sm:p-4 h-full">
             <h1 className="text-3xl font-bold mb-4 text-center">{t('kitchenDisplaySystem')}</h1>
              {activeOrders.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-2xl text-gray-500">
+                <div className="flex items-center justify-center h-full text-2xl text-slate-500">
                     No active orders.
                 </div>
             ) : (

@@ -54,21 +54,21 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({ item, onAddToCa
             <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
                 {item.options?.map(option => (
                     <div key={getLocalized(option.title)}>
-                        <h4 className="font-semibold text-lg">{getLocalized(option.title)} <span className="text-sm text-gray-500">{option.required ? `(${t('required')})` : `(${t('optional')})`}</span></h4>
+                        <h4 className="font-semibold text-lg">{getLocalized(option.title)} <span className="text-sm text-slate-500">{option.required ? `(${t('required')})` : `(${t('optional')})`}</span></h4>
                         <div className="space-y-2 mt-1">
                             {option.items.map(optItem => (
-                                <label key={getLocalized(optItem.name)} className="flex items-center justify-between p-2 rounded-md bg-gray-100 dark:bg-gray-700">
+                                <label key={getLocalized(optItem.name)} className="flex items-center justify-between p-3 rounded-lg bg-slate-100 dark:bg-slate-700 cursor-pointer has-[:checked]:bg-sky-100 has-[:checked]:dark:bg-sky-900/50 has-[:checked]:ring-2 has-[:checked]:ring-sky-500 transition-all">
                                     <div className="flex items-center">
                                         <input
                                             type="radio"
                                             name={getLocalized(option.title)}
                                             checked={selectedOptions[getLocalized(option.title)]?.name.en === optItem.name.en}
                                             onChange={() => handleOptionChange(option, optItem)}
-                                            className="form-radio h-5 w-5 text-blue-600"
+                                            className="form-radio h-5 w-5 text-sky-600 bg-white dark:bg-slate-600 border-slate-300 focus:ring-sky-500"
                                         />
-                                        <span className="ml-3 text-gray-800 dark:text-gray-200">{getLocalized(optItem.name)}</span>
+                                        <span className="ml-3 text-slate-800 dark:text-slate-200">{getLocalized(optItem.name)}</span>
                                     </div>
-                                    {optItem.price > 0 && <span className="text-gray-600 dark:text-gray-400">+ {optItem.price.toFixed(2)}</span>}
+                                    {optItem.price > 0 && <span className="text-slate-600 dark:text-slate-400">+ {optItem.price.toFixed(2)}</span>}
                                 </label>
                             ))}
                         </div>
@@ -77,15 +77,15 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({ item, onAddToCa
 
                 <div>
                     <label htmlFor="notes" className="font-semibold text-lg">{t('specialInstructions')}</label>
-                    <textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="w-full mt-1 p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"></textarea>
+                    <textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="w-full mt-1 p-2 border rounded-lg dark:bg-slate-700 border-slate-300 dark:border-slate-600 focus:ring-sky-500 focus:border-sky-500"></textarea>
                 </div>
             </div>
 
             <div className="mt-6 flex justify-between items-center">
                 <div className="flex items-center space-x-3">
-                    <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 font-bold text-lg">-</button>
-                    <span className="text-xl font-bold">{quantity}</span>
-                    <button onClick={() => setQuantity(q => q + 1)} className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 font-bold text-lg">+</button>
+                    <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-600 font-bold text-xl hover:bg-slate-300 transition-colors">-</button>
+                    <span className="text-xl font-bold w-10 text-center">{quantity}</span>
+                    <button onClick={() => setQuantity(q => q + 1)} className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-600 font-bold text-xl hover:bg-slate-300 transition-colors">+</button>
                 </div>
                 <Button onClick={handleAddToCart} className="text-lg">
                     {t('addToCart')} - {calculateTotalPrice().toFixed(2)}
@@ -103,13 +103,13 @@ const MenuItemCard: React.FC<{ item: MenuItem; onSelect: (item: MenuItem) => voi
     return (
         <div 
             onClick={() => !isDisabled && onSelect(item)} 
-            className={`bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden relative ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:shadow-xl transition-shadow'}`}
+            className={`bg-white dark:bg-slate-800 rounded-xl shadow-md overflow-hidden relative transition-all duration-200 ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:shadow-xl hover:scale-[1.02]'}`}
         >
-            {isDisabled && <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center text-white text-xl font-bold z-10">Out of Stock</div>}
+            {isDisabled && <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center text-white text-xl font-bold z-10">{getLocalized({ en: 'Out of Stock', th: 'ของหมด'})}</div>}
             <img src={`https://picsum.photos/seed/${item.id}/400/200`} alt={getLocalized(item.name)} className="w-full h-32 object-cover" />
             <div className="p-4">
                 <h3 className="font-bold text-lg">{getLocalized(item.name)}</h3>
-                <p className="text-blue-600 dark:text-blue-400 font-semibold mt-1">{item.price.toFixed(2)} {getLocalized(settings.currency)}</p>
+                <p className="text-sky-600 dark:text-sky-400 font-semibold mt-1">{item.price.toFixed(2)} {getLocalized(settings.currency)}</p>
             </div>
         </div>
     );
@@ -129,33 +129,33 @@ const CartView: React.FC<{
     const total = subtotal + vat + serviceCharge;
 
     if (cart.length === 0) {
-        return <div className="p-4 text-center text-gray-500">{t('cartIsEmpty')}</div>;
+        return <div className="p-4 text-center text-slate-500">{t('cartIsEmpty')}</div>;
     }
 
     return (
         <div className="p-4 space-y-3">
             {cart.map((item, index) => (
-                <div key={index} className="flex justify-between items-start border-b pb-2 dark:border-gray-700">
+                <div key={index} className="flex justify-between items-start border-b pb-2 border-slate-200 dark:border-slate-700">
                     <div>
                         <p className="font-semibold">{item.quantity} x {getLocalized(item.menuItem.name)}</p>
-                        <div className="pl-4 text-sm text-gray-500 dark:text-gray-400">
+                        <div className="pl-4 text-sm text-slate-500 dark:text-slate-400">
                             {Object.values(item.selectedOptions).map(opt => <p key={getLocalized(opt.name)}>+ {getLocalized(opt.name)}</p>)}
                             {item.notes && <p className='italic'>"{item.notes}"</p>}
                         </div>
                     </div>
                      <div className='text-right'>
                         <p className="font-semibold">{item.totalPrice.toFixed(2)}</p>
-                        <button onClick={() => onRemoveItem(index)} className="text-red-500 text-xs hover:underline">Remove</button>
+                        <button onClick={() => onRemoveItem(index)} className="text-rose-500 text-xs hover:underline">Remove</button>
                     </div>
                 </div>
             ))}
-            <div className="mt-4 pt-4 border-t-2 border-dashed dark:border-gray-600 space-y-1">
+            <div className="mt-4 pt-4 border-t-2 border-dashed border-slate-300 dark:border-slate-600 space-y-1">
                 <div className="flex justify-between"><span>{t('subtotal')}:</span><span>{subtotal.toFixed(2)}</span></div>
                 <div className="flex justify-between"><span>{t('vat')}:</span><span>{vat.toFixed(2)}</span></div>
                 <div className="flex justify-between"><span>{t('serviceCharge')}:</span><span>{serviceCharge.toFixed(2)}</span></div>
                 <div className="flex justify-between font-bold text-xl pt-2"><span>{t('grandTotal')}:</span><span>{total.toFixed(2)}</span></div>
             </div>
-            <div className="mt-4 p-3 bg-blue-100 dark:bg-blue-900 border-l-4 border-blue-500 text-blue-800 dark:text-blue-200 text-center font-semibold">
+            <div className="mt-4 p-3 bg-sky-100 dark:bg-sky-900/50 border-l-4 border-sky-500 text-sky-800 dark:text-sky-200 text-center font-semibold">
                 {t('payAtCounterMessage')}
             </div>
             <Button onClick={onConfirm} className="w-full mt-4 text-lg py-3">{t('confirmOrder')}</Button>
@@ -210,35 +210,35 @@ const CustomerMenu: React.FC = () => {
     };
     
     if (isValidSession === null) return <div className="text-center p-10">{t('loading')}</div>;
-    if (!isValidSession) return <div className="text-center p-10 text-red-500">Error: Invalid or expired QR code.</div>;
+    if (!isValidSession) return <div className="text-center p-10 text-rose-500">Error: Invalid or expired QR code.</div>;
 
     return (
-        <div className="flex flex-col md:flex-row h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
-             <header className="md:hidden p-4 bg-white dark:bg-gray-800 shadow-md flex justify-between items-center">
-                 <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">{t('menu')}</h1>
+        <div className="flex flex-col md:flex-row h-screen bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+             <header className="md:hidden p-4 bg-white dark:bg-slate-800 shadow-md flex justify-between items-center">
+                 <h1 className="text-xl font-bold text-sky-600 dark:text-sky-400">{t('menu')}</h1>
                  <LanguageSwitcher />
              </header>
 
             {/* Menu Section */}
-            <div className="w-full md:w-2/3 overflow-y-auto p-4">
-                <div className="hidden md:flex justify-between items-center mb-4">
+            <div className="w-full md:w-2/3 overflow-y-auto p-4 md:p-6">
+                <div className="hidden md:flex justify-between items-center mb-6">
                     <h1 className="text-3xl font-bold">{t('welcome')}</h1>
                     <LanguageSwitcher />
                 </div>
                 
-                 <div className='mb-4'>
+                 <div className='mb-6'>
                     <h3 className="font-semibold mb-2">{t('serviceType')}</h3>
-                    <div className="flex space-x-2 rounded-lg bg-gray-200 dark:bg-gray-700 p-1">
+                    <div className="flex space-x-2 rounded-xl bg-slate-200 dark:bg-slate-700 p-1">
                         {[ServiceType.DineIn, ServiceType.TakeAway, ServiceType.PickUp].map(type => (
-                            <button key={type} onClick={() => setServiceType(type)} className={`flex-1 py-2 text-center rounded-md transition-colors ${serviceType === type ? 'bg-white dark:bg-gray-800 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}>{t(type)}</button>
+                            <button key={type} onClick={() => setServiceType(type)} className={`flex-1 py-2 font-semibold text-center rounded-lg transition-all ${serviceType === type ? 'bg-white dark:bg-slate-800 shadow text-sky-600' : 'hover:bg-white/50 dark:hover:bg-slate-600/50 text-slate-600 dark:text-slate-300'}`}>{t(type)}</button>
                         ))}
                     </div>
                 </div>
 
                 {categorizedMenu.map(category => (
                     <div key={category.id} className="mb-8">
-                        <h2 className="text-2xl font-bold border-b-2 border-blue-500 pb-2 mb-4">{getLocalized(category.name)}</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <h2 className="text-2xl font-bold border-b-2 border-sky-500 pb-2 mb-4">{getLocalized(category.name)}</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {category.items.map(item => (
                                 <MenuItemCard key={item.id} item={item} onSelect={setSelectedItem} />
                             ))}
@@ -248,8 +248,8 @@ const CustomerMenu: React.FC = () => {
             </div>
 
             {/* Cart Section */}
-            <div className="w-full md:w-1/3 bg-white dark:bg-gray-800 shadow-lg flex flex-col h-1/2 md:h-full">
-                 <h2 className="text-2xl font-bold p-4 border-b dark:border-gray-700">{t('yourCart')}</h2>
+            <div className="w-full md:w-1/3 bg-white dark:bg-slate-800 shadow-lg flex flex-col h-1/2 md:h-full">
+                 <h2 className="text-2xl font-bold p-4 border-b dark:border-slate-700">{t('yourCart')}</h2>
                  <div className="flex-grow overflow-y-auto">
                     <CartView cart={cart} serviceType={serviceType} onConfirm={handleConfirmOrder} onRemoveItem={handleRemoveFromCart} />
                  </div>

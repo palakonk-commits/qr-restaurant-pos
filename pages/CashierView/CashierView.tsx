@@ -12,9 +12,11 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
     return (
         <button
             onClick={onClick}
-            className={`px-4 py-2 text-lg font-semibold border-b-4 transition-colors ${
-                active ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-            }`}
+            className={`px-4 sm:px-6 py-3 font-semibold text-center transition-colors text-sm sm:text-base border-b-2
+                ${active 
+                    ? 'border-sky-500 text-sky-600 dark:text-sky-400' 
+                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
         >
             {children}
         </button>
@@ -107,7 +109,7 @@ const NewQRTab: React.FC = () => {
     return (
         <div className="p-4">
             <div className="flex justify-between items-center mb-6">
-                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">{t('floorPlan')}</h2>
+                 <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">{t('floorPlan')}</h2>
                  <div className="flex items-center space-x-2">
                     <Button variant="secondary" onClick={() => setIsEditingFloorPlan(p => !p)}>
                         {isEditingFloorPlan ? t('doneManaging') : t('editFloorPlan')}
@@ -123,22 +125,22 @@ const NewQRTab: React.FC = () => {
                         <div 
                             key={table.id}
                             onClick={() => handleTableSelect(table)}
-                            className={`relative p-2 w-full aspect-square flex flex-col items-center justify-center rounded-lg border-2 font-bold text-xl transition-all duration-200 transform
+                            className={`relative p-2 w-full aspect-square flex flex-col items-center justify-center rounded-xl font-bold text-xl transition-all duration-200 transform bg-white dark:bg-slate-800 shadow-sm border-t-8
                                 ${isEditingFloorPlan ? 'cursor-default' : 'cursor-pointer hover:scale-105 hover:shadow-lg'}
                                 ${isAvailable
-                                    ? 'bg-green-100 dark:bg-gray-800 border-green-400 text-green-800 dark:text-green-300'
-                                    : 'bg-red-100 dark:bg-gray-800 border-red-400 text-red-800 dark:text-red-300'
+                                    ? 'border-teal-400'
+                                    : 'border-rose-400'
                                 }
                             `}
                         >
-                            <span className="text-3xl">{table.name}</span>
-                            <span className={`text-xs font-semibold mt-1 px-2 py-0.5 rounded-full ${isAvailable ? 'bg-green-200 dark:bg-green-900/50' : 'bg-red-200 dark:bg-red-900/50'}`}>
+                            <span className="text-4xl text-slate-700 dark:text-slate-200">{table.name}</span>
+                            <span className={`text-xs font-semibold mt-1 px-2 py-0.5 rounded-full ${isAvailable ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-200' : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200'}`}>
                                 {isAvailable ? 'Available' : 'Occupied'}
                             </span>
                              {isEditingFloorPlan && isAvailable && (
                                 <button 
                                     onClick={(e) => handleRemoveTable(e, table)}
-                                    className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-black text-lg hover:bg-red-700 shadow-lg transition-transform hover:scale-110"
+                                    className="absolute -top-4 -right-4 bg-rose-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-black text-lg hover:bg-rose-700 shadow-lg transition-transform hover:scale-110"
                                     aria-label={`Remove table ${table.name}`}
                                 >
                                     &times;
@@ -155,7 +157,7 @@ const NewQRTab: React.FC = () => {
                     <div className="bg-white p-4 rounded-lg shadow-inner">
                         {qrUrl && <QRCode value={qrUrl} size={256} />}
                     </div>
-                    <p className="mt-4 font-mono text-sm bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">{activeQr?.sessionId}</p>
+                    <p className="mt-4 font-mono text-sm bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{activeQr?.sessionId}</p>
                     <div className="mt-6 flex space-x-4">
                         <Button onClick={handlePrint}>Print Slip</Button>
                         <Button variant="secondary" onClick={handleCloseQrModal}>{t('close')}</Button>
@@ -178,21 +180,35 @@ const NewQRTab: React.FC = () => {
 };
 
 
-const OrderList: React.FC<{ orders: Order[], onOrderSelect: (order: Order) => void }> = ({ orders, onOrderSelect }) => {
+const OrderList: React.FC<{ 
+    orders: Order[], 
+    onOrderSelect: (order: Order) => void,
+    onPayClick: (order: Order) => void,
+    onCancelClick: (order: Order) => void,
+    showActions: boolean 
+}> = ({ orders, onOrderSelect, onPayClick, onCancelClick, showActions }) => {
     const { getLocalized, t } = useAppContext();
     if (orders.length === 0) {
-        return <div className="text-center p-8 text-gray-500">{`No orders in this category.`}</div>
+        return <div className="text-center p-8 text-slate-500">{`No orders in this category.`}</div>
     }
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
             {orders.map(order => (
-                <div key={order.id} onClick={() => onOrderSelect(order)} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 cursor-pointer hover:shadow-xl transition-shadow">
-                    <div className="flex justify-between items-center border-b pb-2 mb-2 dark:border-gray-700">
-                        <h3 className="font-bold text-lg">{t('order')} #{order.queueNumber}</h3>
-                        <span className="text-sm font-semibold px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">{t(order.status)}</span>
+                <div key={order.id} className="bg-white dark:bg-slate-800 rounded-xl shadow p-4 flex flex-col transition-all border border-slate-200 dark:border-slate-700 hover:shadow-lg hover:border-sky-400 dark:hover:border-sky-600">
+                    <div onClick={() => onOrderSelect(order)} className="cursor-pointer flex-grow">
+                        <div className="flex justify-between items-center border-b pb-2 mb-2 border-slate-200 dark:border-slate-700">
+                            <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100">{t('order')} #{order.queueNumber}</h3>
+                            <span className="text-xs font-semibold px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded-full">{t(order.status)}</span>
+                        </div>
+                        <p className="text-slate-600 dark:text-slate-400">{order.items.length} items</p>
+                        <p className="text-xl font-bold mt-2 text-right text-sky-600 dark:text-sky-400">{order.total.toFixed(2)}</p>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400">{order.items.length} items</p>
-                    <p className="text-lg font-bold mt-2 text-right text-blue-600 dark:text-blue-400">{order.total.toFixed(2)}</p>
+                     {showActions && (
+                        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-between space-x-2">
+                            <Button variant="danger" className="w-full" onClick={() => onCancelClick(order)}>{t('cancel')}</Button>
+                            <Button variant="primary" className="w-full" onClick={() => onPayClick(order)}>{t('pay')}</Button>
+                        </div>
+                    )}
                 </div>
             ))}
         </div>
@@ -200,10 +216,11 @@ const OrderList: React.FC<{ orders: Order[], onOrderSelect: (order: Order) => vo
 }
 
 const CashierView: React.FC = () => {
-  const { orders, t } = useAppContext();
-  const [activeTab, setActiveTab] = useState<'newQR' | 'unpaid' | 'inProgress' | 'completed'>('newQR');
+  const { orders, t, cancelOrder } = useAppContext();
+  const [activeTab, setActiveTab] = useState<'newQR' | 'unpaid' | 'inProgress' | 'completed'>('unpaid');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [orderToCancel, setOrderToCancel] = useState<Order | null>(null);
 
   const unpaidOrders = orders.filter(o => o.status === OrderStatus.Unpaid);
   const inProgressOrders = orders.filter(o => [OrderStatus.Paid, OrderStatus.Preparing, OrderStatus.Ready].includes(o.status));
@@ -213,11 +230,23 @@ const CashierView: React.FC = () => {
     setSelectedOrder(order);
   }
 
-  const handlePay = () => {
-    if(selectedOrder?.status === OrderStatus.Unpaid) {
+  const handlePayClick = (order: Order) => {
+    if(order.status === OrderStatus.Unpaid) {
+        setSelectedOrder(order);
         setIsPaymentModalOpen(true);
     }
-  }
+  };
+  
+  const handleCancelClick = (order: Order) => {
+    setOrderToCancel(order);
+  };
+
+  const confirmOrderCancellation = () => {
+    if (orderToCancel) {
+        cancelOrder(orderToCancel.id, "Cancelled by cashier");
+        setOrderToCancel(null);
+    }
+  };
 
   const handlePrintReceipt = () => {
       if(!selectedOrder) return;
@@ -231,26 +260,28 @@ const CashierView: React.FC = () => {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex border-b dark:border-gray-700 bg-white dark:bg-gray-800">
+    <div className="h-full flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg">
+      <div className="flex border-b border-slate-200 dark:border-slate-700">
         <TabButton active={activeTab === 'newQR'} onClick={() => setActiveTab('newQR')}>{t('newQR')}</TabButton>
-        <TabButton active={activeTab === 'unpaid'} onClick={() => setActiveTab('unpaid')}>{t('unpaid')} <span className="ml-2 bg-red-500 text-white text-xs rounded-full px-2 py-1">{unpaidOrders.length}</span></TabButton>
+        <TabButton active={activeTab === 'unpaid'} onClick={() => setActiveTab('unpaid')}>
+            {t('unpaid')} <span className="ml-2 bg-rose-500 text-white text-xs font-bold rounded-full px-2 py-1">{unpaidOrders.length}</span>
+        </TabButton>
         <TabButton active={activeTab === 'inProgress'} onClick={() => setActiveTab('inProgress')}>{t('inProgress')}</TabButton>
         <TabButton active={activeTab === 'completed'} onClick={() => setActiveTab('completed')}>{t('completed')}</TabButton>
       </div>
 
-      <div className="flex-grow overflow-y-auto">
+      <div className="flex-grow overflow-y-auto bg-slate-50 dark:bg-slate-800/50 rounded-b-xl">
         {activeTab === 'newQR' && <NewQRTab />}
-        {activeTab === 'unpaid' && <OrderList orders={unpaidOrders} onOrderSelect={handleOrderSelect} />}
-        {activeTab === 'inProgress' && <OrderList orders={inProgressOrders} onOrderSelect={handleOrderSelect} />}
-        {activeTab === 'completed' && <OrderList orders={completedOrders} onOrderSelect={handleOrderSelect} />}
+        {activeTab === 'unpaid' && <OrderList orders={unpaidOrders} onOrderSelect={handleOrderSelect} onPayClick={handlePayClick} onCancelClick={handleCancelClick} showActions={true} />}
+        {activeTab === 'inProgress' && <OrderList orders={inProgressOrders} onOrderSelect={handleOrderSelect} onPayClick={()=>{}} onCancelClick={()=>{}} showActions={false} />}
+        {activeTab === 'completed' && <OrderList orders={completedOrders} onOrderSelect={handleOrderSelect} onPayClick={()=>{}} onCancelClick={()=>{}} showActions={false} />}
       </div>
 
        <Modal isOpen={!!selectedOrder && !isPaymentModalOpen} onClose={closeModals} title={`${t('order')} #${selectedOrder?.queueNumber}`}>
           {selectedOrder && <OrderDetails order={selectedOrder} />}
            <div className="mt-4 flex justify-end space-x-2">
                {selectedOrder?.status === OrderStatus.Unpaid && (
-                   <Button onClick={handlePay}>{t('pay')}</Button>
+                   <Button onClick={() => handlePayClick(selectedOrder)}>{t('pay')}</Button>
                )}
                {selectedOrder && [OrderStatus.Served, OrderStatus.Paid, OrderStatus.Ready, OrderStatus.Preparing].includes(selectedOrder.status) && (
                    <Button onClick={handlePrintReceipt} variant='primary'>{t('printReceipt')}</Button>
@@ -265,6 +296,16 @@ const CashierView: React.FC = () => {
                 onClose={closeModals}
             />
        )}
+       {orderToCancel && (
+            <ConfirmationModal
+                isOpen={!!orderToCancel}
+                onClose={() => setOrderToCancel(null)}
+                onConfirm={confirmOrderCancellation}
+                title={t('confirmCancelOrderTitle')}
+            >
+                <p>{t('confirmCancelOrderMessage')}</p>
+            </ConfirmationModal>
+        )}
     </div>
   );
 };

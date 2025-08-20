@@ -35,17 +35,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ order, isOpen, onClose }) =
             <div className="space-y-4">
                 <OrderDetails order={order} />
                 
-                <div className="pt-4 border-t dark:border-gray-600">
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-600">
                     <h4 className="font-semibold mb-2">{t('paymentMethod')}</h4>
-                    <div className="flex space-x-2">
+                    <div className="grid grid-cols-3 gap-2">
                         {paymentMethods.map(({ method, label }) => (
                             <button
                                 key={method}
                                 onClick={() => setSelectedMethod(method)}
-                                className={`flex-1 p-3 rounded-lg border-2 transition-colors ${
+                                className={`p-3 rounded-lg border-2 font-semibold transition-all ${
                                     selectedMethod === method 
-                                        ? 'bg-blue-500 border-blue-500 text-white' 
-                                        : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                        ? 'bg-sky-600 border-sky-600 text-white scale-105 shadow-lg' 
+                                        : 'bg-slate-100 dark:bg-slate-700 border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600 hover:border-slate-400'
                                 }`}
                             >
                                 {label}

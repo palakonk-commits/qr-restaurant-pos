@@ -14,18 +14,18 @@ const AuditorView: React.FC = () => {
     ];
 
     return (
-        <div>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-4 sm:p-6">
             <h1 className="text-3xl font-bold mb-4">{t('Auditor')} View</h1>
-            <div className="flex border-b dark:border-gray-700 mb-4">
+            <div className="flex border-b border-slate-200 dark:border-slate-700 mb-4">
                 {tabs.map(tab => (
                     <button 
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`px-4 py-2 text-lg font-semibold transition-colors ${
-                            activeTab === tab.id 
-                                ? 'border-b-4 border-blue-500 text-blue-600 dark:text-blue-400' 
-                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                        }`}
+                        className={`px-4 sm:px-6 py-3 font-semibold text-center transition-colors text-sm sm:text-base border-b-2
+                            ${activeTab === tab.id 
+                                ? 'border-sky-500 text-sky-600 dark:text-sky-400' 
+                                : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                            }`}
                     >
                         {tab.label}
                     </button>
