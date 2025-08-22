@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
-import { useAppContext, encodeState } from '../../context/AppContext';
-import { Order, OrderStatus, Table, TableStatus, AppState } from '../../types';
+import { useAppContext, encodeQrState } from '../../context/AppContext';
+import { Order, OrderStatus, Table, TableStatus } from '../../types';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import QRCode from "react-qr-code";
@@ -25,7 +26,7 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
 
 const NewQRTab: React.FC = () => {
     const context = useAppContext();
-    const { createQrSession, t, tables, addTable, removeTable, getQrSession, cancelQrSession, forceClearTable } = context;
+    const { createQrSession, t, tables, addTable, removeTable, getQrSession, cancelQrSession, forceClearTable, menuItems, menuCategories, settings } = context;
     const [activeQr, setActiveQr] = useState<{ sessionId: string; tableId: string } | null>(null);
     const [isEditingFloorPlan, setIsEditingFloorPlan] = useState(false);
     const [confirmation, setConfirmation] = useState<{
@@ -72,11 +73,29 @@ const NewQRTab: React.FC = () => {
         setActiveQr(null);
     };
     
-    const getAbsoluteUrlWithState = (hashPath: string, state: AppState) => {
+    const getAbsoluteUrlWithState = (hashPath: string) => {
         const { origin, pathname } = window.location;
         const cleanPath = pathname.replace(/index\.html$/, '');
         const baseUrl = `${origin}${cleanPath}`;
-        const encodedState = encodeState(state);
+        
+        // Create a leaner state object for the QR code to prevent overflow
+        const { qrCodeExpiryMinutes, ...customerSettings } = settings;
+        const leanMenuItems = menuItems.map(({ id, name, category, price, isOutOfStock, options }) => ({
+            id,
+            name,
+            category,
+            price,
+            isOutOfStock,
+            options,
+        }));
+
+        const qrState = {
+            menuItems: leanMenuItems,
+            menuCategories,
+            settings: customerSettings,
+        };
+        const encodedState = encodeQrState(qrState);
+
         return `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}${hashPath}&state=${encodedState}`;
     };
 
@@ -88,20 +107,7 @@ const NewQRTab: React.FC = () => {
     
     let qrUrl = '';
     if (activeQr) {
-        // Cast context to AppState to pass to encoder
-        const appState: AppState = {
-            currentUser: context.currentUser,
-            users: context.users,
-            menuItems: context.menuItems,
-            menuCategories: context.menuCategories,
-            orders: context.orders,
-            qrSessions: context.qrSessions,
-            auditLogs: context.auditLogs,
-            tables: context.tables,
-            settings: context.settings,
-            lastQueueNumber: context.lastQueueNumber
-        };
-        qrUrl = getAbsoluteUrlWithState(`/#/menu/${activeQr.sessionId}?`, appState);
+        qrUrl = getAbsoluteUrlWithState(`/#/menu/${activeQr.sessionId}?`);
     }
 
     const selectedTable = activeQr ? tables.find(t => t.id === activeQr.tableId) : null;

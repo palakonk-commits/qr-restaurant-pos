@@ -1,12 +1,36 @@
 
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import pako from 'pako';
-import { User, UserRole, MenuItem, MenuCategory, Order, OrderStatus, QrSession, AuditLog, Settings, ServiceType, CartItem, PaymentMethod, Table, TableStatus, AppState } from '../types';
+import { User, UserRole, MenuItem, MenuCategory, Order, OrderStatus, QrSession, AuditLog, Settings, ServiceType, CartItem, PaymentMethod, Table, TableStatus, AppState, MenuOption } from '../types';
 import { useLocalization } from '../hooks/useLocalization';
 
 // --- STATE SERIALIZATION HELPERS ---
-// Encodes the entire app state into a URL-safe, compressed string
-export const encodeState = (state: AppState): string => {
+
+// Define lean versions of types for QR code
+// This is to minimize the amount of data encoded in the QR code
+interface QrMenuItem {
+    id: string;
+    name: { th: string; en: string };
+    category: string;
+    price: number;
+    isOutOfStock: boolean;
+    options?: MenuOption[];
+}
+interface QrSettings {
+    vatRate: number;
+    serviceChargeRate: number;
+    currency: { th: string; en: string };
+}
+
+// Define a minimal state shape for QR codes to avoid overflowing the QR capacity
+interface QrState {
+    menuItems: QrMenuItem[];
+    menuCategories: MenuCategory[];
+    settings: QrSettings;
+}
+
+// Encodes the minimal customer state into a URL-safe, compressed string
+export const encodeQrState = (state: QrState): string => {
   const jsonString = JSON.stringify(state);
   const compressed = pako.deflate(jsonString);
   let binaryString = '';
@@ -19,8 +43,8 @@ export const encodeState = (state: AppState): string => {
     .replace(/=+$/, '');
 };
 
-// Decodes the state from a URL param
-const decodeState = (encodedState: string): AppState | null => {
+// Decodes the minimal state from a URL param for the customer view
+const decodeQrState = (encodedState: string): QrState | null => {
   try {
     let base64 = encodedState.replace(/-/g, '+').replace(/_/g, '/');
     while (base64.length % 4) {
@@ -33,13 +57,10 @@ const decodeState = (encodedState: string): AppState | null => {
     }
     const jsonString = pako.inflate(compressed, { to: 'string' });
     const parsed = JSON.parse(jsonString);
-    // Dates are stored as strings, need to convert them back
-    parsed.orders = parsed.orders.map((o: Order) => ({ ...o, createdAt: new Date(o.createdAt), paidAt: o.paidAt ? new Date(o.paidAt) : undefined }));
-    parsed.qrSessions = parsed.qrSessions.map((s: QrSession) => ({ ...s, createdAt: new Date(s.createdAt) }));
-    parsed.auditLogs = parsed.auditLogs.map((l: AuditLog) => ({...l, timestamp: new Date(l.timestamp) }));
+    // No dates to parse in this minimal state
     return parsed;
   } catch (e) {
-    console.error("Failed to decode state from URL", e);
+    console.error("Failed to decode QR state from URL", e);
     return null;
   }
 };
@@ -87,17 +108,43 @@ const getInitialState = (): AppState => {
     // 1. Check for state in URL (for customer QR scans)
     const urlParams = new URLSearchParams(window.location.hash.split('?')[1]);
     const stateFromUrl = urlParams.get('state');
+
+    const defaultStateForCustomer: AppState = {
+        currentUser: null,
+        users: [], // Customer doesn't need user list
+        menuItems: [],
+        menuCategories: [],
+        orders: [],
+        qrSessions: [],
+        auditLogs: [],
+        tables: [], // Customer doesn't need table list
+        settings: {
+            vatRate: 0.07,
+            serviceChargeRate: 0.10,
+            qrCodeExpiryMinutes: 15,
+            currency: { en: 'THB', th: 'บาท' },
+        },
+        lastQueueNumber: 0,
+    };
+
     if (stateFromUrl) {
-        const decoded = decodeState(stateFromUrl);
+        const decoded = decodeQrState(stateFromUrl);
         if (decoded) {
-            console.log("State successfully loaded from URL.");
-            // This instance is for a customer, so we don't need to persist their view.
-            // We just use the state from the QR.
-            return { ...decoded, currentUser: null }; // Always start logged out
+            console.log("Minimal state successfully loaded from URL for customer view.");
+            // Build a valid AppState for the customer using minimal decoded data
+            // We cast the leaner types to the full types. This is safe because the customer
+            // view only accesses the properties present in the leaner types.
+            return { 
+                ...defaultStateForCustomer,
+                menuItems: decoded.menuItems as MenuItem[],
+                menuCategories: decoded.menuCategories,
+                settings: decoded.settings as Settings,
+            };
         }
     }
-
-    const defaultState: AppState = {
+    
+    // Fallback to default state for main app
+     const defaultState: AppState = {
         currentUser: null,
         users: MOCK_USERS,
         menuItems: MOCK_MENU,

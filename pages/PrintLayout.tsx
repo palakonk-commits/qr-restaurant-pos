@@ -1,13 +1,14 @@
+
 import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCode from 'react-qr-code';
-import { useAppContext, encodeState } from '../context/AppContext';
+import { useAppContext, encodeQrState } from '../context/AppContext';
 import { AppState } from '../types';
 
 const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) => {
     const { sessionId, orderId } = useParams();
     const context = useAppContext();
-    const { getQrSession, orders, settings, getLocalized, t, tables } = context;
+    const { getQrSession, orders, settings, getLocalized, t, tables, menuItems, menuCategories } = context;
 
     useEffect(() => {
         setTimeout(() => {
@@ -16,11 +17,29 @@ const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) =
         }, 500); // Delay to ensure content is rendered
     }, []);
 
-    const getAbsoluteUrlWithState = (hashPath: string, state: AppState) => {
+    const getAbsoluteUrlWithState = (hashPath: string) => {
         const { origin, pathname } = window.location;
         const cleanPath = pathname.replace(/index\.html$/, '');
         const baseUrl = `${origin}${cleanPath}`;
-        const encodedState = encodeState(state);
+
+        // Create a leaner state object for the QR code to prevent overflow
+        const { qrCodeExpiryMinutes, ...customerSettings } = settings;
+        const leanMenuItems = menuItems.map(({ id, name, category, price, isOutOfStock, options }) => ({
+            id,
+            name,
+            category,
+            price,
+            isOutOfStock,
+            options,
+        }));
+
+        const qrState = {
+            menuItems: leanMenuItems,
+            menuCategories,
+            settings: customerSettings,
+        };
+        const encodedState = encodeQrState(qrState);
+        
         return `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}${hashPath}&state=${encodedState}`;
     };
 
@@ -31,19 +50,7 @@ const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) =
             const table = session?.tableId ? tables.find(t => t.id === session.tableId) : null;
             if (!session) return <div>Invalid Session ID</div>;
             
-            const appState: AppState = {
-                currentUser: context.currentUser,
-                users: context.users,
-                menuItems: context.menuItems,
-                menuCategories: context.menuCategories,
-                orders: context.orders,
-                qrSessions: context.qrSessions,
-                auditLogs: context.auditLogs,
-                tables: context.tables,
-                settings: context.settings,
-                lastQueueNumber: context.lastQueueNumber
-            };
-            const qrUrl = getAbsoluteUrlWithState(`/#/menu/${session.id}?`, appState);
+            const qrUrl = getAbsoluteUrlWithState(`/#/menu/${session.id}?`);
 
             return (
                 <div className="text-center">
