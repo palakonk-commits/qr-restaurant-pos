@@ -1,69 +1,8 @@
 
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import pako from 'pako';
 import { User, UserRole, MenuItem, MenuCategory, Order, OrderStatus, QrSession, AuditLog, Settings, ServiceType, CartItem, PaymentMethod, Table, TableStatus, AppState, MenuOption } from '../types';
 import { useLocalization } from '../hooks/useLocalization';
-
-// --- STATE SERIALIZATION HELPERS ---
-
-// Define lean versions of types for QR code
-// This is to minimize the amount of data encoded in the QR code
-interface QrMenuItem {
-    id: string;
-    name: { th: string; en: string };
-    category: string;
-    price: number;
-    isOutOfStock: boolean;
-    options?: MenuOption[];
-}
-interface QrSettings {
-    vatRate: number;
-    serviceChargeRate: number;
-    currency: { th: string; en: string };
-}
-
-// Define a minimal state shape for QR codes to avoid overflowing the QR capacity
-interface QrState {
-    menuItems: QrMenuItem[];
-    menuCategories: MenuCategory[];
-    settings: QrSettings;
-}
-
-// Encodes the minimal customer state into a URL-safe, compressed string
-export const encodeQrState = (state: QrState): string => {
-  const jsonString = JSON.stringify(state);
-  const compressed = pako.deflate(jsonString);
-  let binaryString = '';
-  compressed.forEach(byte => {
-    binaryString += String.fromCharCode(byte);
-  });
-  return btoa(binaryString)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-};
-
-// Decodes the minimal state from a URL param for the customer view
-const decodeQrState = (encodedState: string): QrState | null => {
-  try {
-    let base64 = encodedState.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) {
-      base64 += '=';
-    }
-    const binaryString = atob(base64);
-    const compressed = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-        compressed[i] = binaryString.charCodeAt(i);
-    }
-    const jsonString = pako.inflate(compressed, { to: 'string' });
-    const parsed = JSON.parse(jsonString);
-    // No dates to parse in this minimal state
-    return parsed;
-  } catch (e) {
-    console.error("Failed to decode QR state from URL", e);
-    return null;
-  }
-};
+import { decodeQrState } from '../utils/qr';
 
 
 // --- MOCK/INITIAL DATA ---
@@ -138,7 +77,7 @@ const getInitialState = (): AppState => {
                 ...defaultStateForCustomer,
                 menuItems: decoded.menuItems as MenuItem[],
                 menuCategories: decoded.menuCategories,
-                settings: decoded.settings as Settings,
+                settings: { ...defaultStateForCustomer.settings, ...decoded.settings },
             };
         }
     }
@@ -189,7 +128,7 @@ interface AppContextType extends AppState {
     createQrSession: (tableId: string) => QrSession;
     getQrSession: (id: string) => QrSession | undefined;
     cancelQrSession: (sessionId: string) => void;
-    createOrderFromCart: (qrId: string, cart: CartItem[], serviceType: ServiceType) => Order | null;
+    createOrderFromCart: (qrId: string, cart: CartItem[], serviceType: ServiceType) => { id: string } | null;
     markOrderAsPaid: (orderId: string, paymentMethod: PaymentMethod) => void;
     updateOrderStatus: (orderId: string, status: OrderStatus) => void;
     cancelOrder: (orderId: string, reason: string) => void;
@@ -226,32 +165,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, [state, isSharedState]);
     
-    // Listen for changes in localStorage from other tabs (i.e., customer orders)
-    useEffect(() => {
-        const handleStorageChange = (event: StorageEvent) => {
-            if (event.key === 'pos_app_state' && event.newValue) {
-                try {
-                    const parsed = JSON.parse(event.newValue);
-                    // Rehydrate dates
-                    parsed.orders = parsed.orders.map((o: Order) => ({ ...o, createdAt: new Date(o.createdAt), paidAt: o.paidAt ? new Date(o.paidAt) : undefined }));
-                    parsed.qrSessions = parsed.qrSessions.map((s: QrSession) => ({ ...s, createdAt: new Date(s.createdAt) }));
-                    parsed.auditLogs = parsed.auditLogs.map((l: AuditLog) => ({...l, timestamp: new Date(l.timestamp) }));
-                    
-                    // Update state but preserve the current logged-in user
-                    setState(prevState => ({...parsed, currentUser: prevState.currentUser }));
-                } catch (e) {
-                    console.error("Failed to parse state from storage event", e);
-                }
-            }
-        };
-
-        window.addEventListener('storage', handleStorageChange);
-
-        return () => {
-            window.removeEventListener('storage', handleStorageChange);
-        };
+    const calculateTotals = useCallback((cart: CartItem[], settings: Settings) => {
+        const subtotal = cart.reduce((acc, item) => acc + item.totalPrice, 0);
+        const vat = subtotal * settings.vatRate;
+        const serviceCharge = subtotal * settings.serviceChargeRate;
+        const total = subtotal + vat + serviceCharge;
+        return { subtotal, vat, serviceCharge, total };
     }, []);
-
 
     const addAuditLog = useCallback((action: string, details: string, user: User) => {
         const newLog: AuditLog = {
@@ -264,6 +184,111 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
         setState(prevState => ({ ...prevState, auditLogs: [newLog, ...prevState.auditLogs]}));
     }, []);
+
+    const processOrderRequests = useCallback(() => {
+        const requestsRaw = localStorage.getItem('pos_order_requests');
+        if (!requestsRaw) return;
+        
+        const requests = JSON.parse(requestsRaw);
+        if (!Array.isArray(requests) || requests.length === 0) return;
+
+        setState(prevState => {
+            if (!prevState.currentUser) return prevState;
+
+            let newState = { ...prevState };
+            let updated = false;
+
+            requests.forEach((req: any) => {
+                if (!req.qrId || !req.orderId || !req.cart || newState.orders.some(o => o.id === req.orderId)) return;
+
+                const session = newState.qrSessions.find(s => s.id === req.qrId);
+                if (!session || session.status !== 'active') {
+                    console.warn(`Order request for invalid/used session ${req.qrId} ignored.`);
+                    return;
+                }
+                
+                // Re-hydrate cart items with full menu item data from the main state
+                // This prevents data pollution from the lean menu items sent by the customer
+                const validatedCartItems: CartItem[] = req.cart.map((cartItem: any) => {
+                    const fullMenuItem = newState.menuItems.find(m => m.id === cartItem.menuItem.id);
+                    if (!fullMenuItem) {
+                        console.warn(`Invalid menu item ID ${cartItem.menuItem.id} in order request.`);
+                        return null; // Item might have been deleted since QR was generated
+                    }
+                    return {
+                        ...cartItem,
+                        menuItem: fullMenuItem, // Replace lean item with full item
+                    };
+                }).filter((item: CartItem | null): item is CartItem => item !== null);
+
+                if (validatedCartItems.length === 0 && req.cart.length > 0) {
+                     console.warn(`Order request ${req.orderId} ignored as it contained no valid items.`);
+                     return;
+                }
+
+                const newQueueNumber = newState.lastQueueNumber + 1;
+                const { subtotal, vat, serviceCharge, total } = calculateTotals(validatedCartItems, newState.settings);
+                const newOrder: Order = {
+                    id: req.orderId,
+                    qrSessionId: req.qrId,
+                    queueNumber: newQueueNumber,
+                    items: validatedCartItems.map((item: CartItem) => ({...item, id: `item-${Math.random()}`})),
+                    serviceType: req.serviceType,
+                    status: OrderStatus.Unpaid,
+                    subtotal, vat, serviceCharge, discount: 0, total,
+                    createdAt: new Date(req.requestedAt),
+                    createdBy: 'Customer',
+                };
+                
+                newState.lastQueueNumber = newQueueNumber;
+                newState.orders = [...newState.orders, newOrder];
+                newState.qrSessions = newState.qrSessions.map(s => s.id === req.qrId ? { ...s, status: 'used', orderId: newOrder.id } : s);
+                if (session.tableId) {
+                    newState.tables = newState.tables.map(t => t.id === session.tableId ? { ...t, status: TableStatus.Occupied } : t);
+                }
+                
+                addAuditLog('Order', `New order #${newQueueNumber} created by customer.`, prevState.currentUser);
+                updated = true;
+            });
+
+            if (updated) {
+                localStorage.removeItem('pos_order_requests');
+                return newState;
+            }
+
+            return prevState;
+        });
+    }, [addAuditLog, calculateTotals]);
+
+    // Listen for changes in localStorage from other tabs
+    useEffect(() => {
+        const handleStorageChange = (event: StorageEvent) => {
+            if (event.key === 'pos_app_state' && event.newValue) {
+                try {
+                    const parsed = JSON.parse(event.newValue);
+                    parsed.orders = parsed.orders.map((o: Order) => ({ ...o, createdAt: new Date(o.createdAt), paidAt: o.paidAt ? new Date(o.paidAt) : undefined }));
+                    parsed.qrSessions = parsed.qrSessions.map((s: QrSession) => ({ ...s, createdAt: new Date(s.createdAt) }));
+                    parsed.auditLogs = parsed.auditLogs.map((l: AuditLog) => ({...l, timestamp: new Date(l.timestamp) }));
+                    setState(prevState => ({...parsed, currentUser: prevState.currentUser }));
+                } catch (e) {
+                    console.error("Failed to parse state from storage event", e);
+                }
+            }
+            if (event.key === 'pos_order_requests' && !isSharedState) {
+                processOrderRequests();
+            }
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        if (!isSharedState) {
+          processOrderRequests();
+        }
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+        };
+    }, [isSharedState, processOrderRequests]);
+
 
     const login = (userId: string, pin: string): boolean => {
         const user = state.users.find(u => u.id === userId && u.pin === pin);
@@ -294,24 +319,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const table = prevState.tables.find(t => t.id === tableId);
             if (!table) return prevState;
 
-            const newLog: AuditLog = {
-                id: `log-${Date.now()}`,
-                timestamp: new Date(),
-                userId: prevState.currentUser.id,
-                userName: prevState.currentUser.name,
-                action: 'QR Generation',
-                details: `Generated new QR for table ${table.name}: ${newSession.id}`,
-            };
+            addAuditLog('QR Generation', `Generated new QR for table ${table.name}: ${newSession.id}`, prevState.currentUser);
             
             return {
                 ...prevState,
                 qrSessions: [...prevState.qrSessions, newSession],
                 tables: prevState.tables.map(t => t.id === tableId ? { ...t, status: TableStatus.Occupied } : t),
-                auditLogs: [newLog, ...prevState.auditLogs]
             };
         });
         return newSession;
-    }, []);
+    }, [addAuditLog]);
 
     const cancelQrSession = useCallback((sessionId: string) => {
         setState(prevState => {
@@ -320,21 +337,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (!session || session.status !== 'active') return prevState;
 
             let newTables = prevState.tables;
-            let newAuditLogs = prevState.auditLogs;
             
             if (session.tableId) {
                 const table = prevState.tables.find(t => t.id === session.tableId);
                 if (table) {
                     newTables = prevState.tables.map(t => t.id === session.tableId ? { ...t, status: TableStatus.Available } : t);
-                    const newLog: AuditLog = {
-                        id: `log-${Date.now()}`,
-                        timestamp: new Date(),
-                        userId: prevState.currentUser.id,
-                        userName: prevState.currentUser.name,
-                        action: 'QR Cancellation',
-                        details: `Cancelled QR for table ${table.name}: ${sessionId}`,
-                    };
-                    newAuditLogs = [newLog, ...prevState.auditLogs];
+                    addAuditLog('QR Cancellation', `Cancelled QR for table ${table.name}: ${sessionId}`, prevState.currentUser);
                 }
             }
             
@@ -342,130 +350,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ...prevState,
                 qrSessions: prevState.qrSessions.map(qs => qs.id === sessionId ? { ...qs, status: 'expired' as const } : qs),
                 tables: newTables,
-                auditLogs: newAuditLogs,
             };
         });
-    }, []);
+    }, [addAuditLog]);
 
     const getQrSession = useCallback((id: string): QrSession | undefined => {
         return state.qrSessions.find(s => s.id === id);
     }, [state.qrSessions]);
     
-    const calculateTotals = (cart: CartItem[], settings: Settings) => {
-        const subtotal = cart.reduce((acc, item) => acc + item.totalPrice, 0);
-        const vat = subtotal * settings.vatRate;
-        const serviceCharge = subtotal * settings.serviceChargeRate;
-        const total = subtotal + vat + serviceCharge;
-        return { subtotal, vat, serviceCharge, total };
-    };
+    const createOrderFromCart = (qrId: string, cart: CartItem[], serviceType: ServiceType): { id: string } | null => {
+        try {
+            const orderId = `order-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+            const requestPayload = { qrId, cart, serviceType, orderId, requestedAt: new Date() };
     
-    const createOrderFromCart = (qrId: string, cart: CartItem[], serviceType: ServiceType): Order | null => {
-        // 1. Read the LATEST state from localStorage to prevent overwriting recent changes from other tabs.
-        let latestState: AppState;
-        try {
-            const savedState = localStorage.getItem('pos_app_state');
-            if (!savedState) {
-                console.error("Cannot create order, master state not found in localStorage.");
-                return null;
-            }
-            latestState = JSON.parse(savedState);
-            // Rehydrate dates from the master copy
-            latestState.orders = latestState.orders.map((o: Order) => ({ ...o, createdAt: new Date(o.createdAt), paidAt: o.paidAt ? new Date(o.paidAt) : undefined }));
-            latestState.qrSessions = latestState.qrSessions.map((s: QrSession) => ({ ...s, createdAt: new Date(s.createdAt) }));
-            latestState.auditLogs = latestState.auditLogs.map((l: AuditLog) => ({...l, timestamp: new Date(l.timestamp) }));
-        } catch(e) {
-            console.error("Failed to read master state from localStorage.", e);
-            return null; // Don't proceed if we can't get the latest state
-        }
-        
-        // 2. Validate session against the LATEST state
-        const session = latestState.qrSessions.find(s => s.id === qrId);
-        if (!session || session.status !== 'active') {
-            console.error("QR Session is invalid or already used.");
-            return null;
-        }
-
-        // 3. Create the new order based on the LATEST state
-        const newQueueNumber = latestState.lastQueueNumber + 1;
-        const { subtotal, vat, serviceCharge, total } = calculateTotals(cart, latestState.settings);
-        const newOrder: Order = {
-            id: `order-${Date.now()}`,
-            qrSessionId: qrId,
-            queueNumber: newQueueNumber,
-            items: cart.map(item => ({...item, id: `item-${Math.random()}`})),
-            serviceType,
-            status: OrderStatus.Unpaid,
-            subtotal, vat, serviceCharge, discount: 0, total,
-            createdAt: new Date(),
-            createdBy: 'Customer',
-        };
-        
-        // 4. Construct the final state to be saved
-        const finalState: AppState = {
-            ...latestState,
-            lastQueueNumber: newQueueNumber,
-            orders: [...latestState.orders, newOrder],
-            qrSessions: latestState.qrSessions.map(s => s.id === qrId ? { ...s, status: 'used' as const, orderId: newOrder.id } : s)
-        };
-
-        // 5. Write the final state to localStorage to trigger sync on other tabs
-        try {
-            const stateToSave = { ...finalState, currentUser: null }; // Always save as logged out
-            localStorage.setItem('pos_app_state', JSON.stringify(stateToSave));
+            const existingRaw = localStorage.getItem('pos_order_requests');
+            const existing = existingRaw ? JSON.parse(existingRaw) : [];
+            existing.push(requestPayload);
+            localStorage.setItem('pos_order_requests', JSON.stringify(existing));
+    
+            window.dispatchEvent(new StorageEvent('storage', {
+                key: 'pos_order_requests',
+                newValue: JSON.stringify(existing),
+                storageArea: localStorage,
+            }));
+    
+            return { id: orderId };
         } catch (error) {
-            console.error("Customer could not save state to localStorage", error);
+            console.error("Customer could not submit order request", error);
             return null;
         }
-        
-        // 6. Update the local state of this customer tab to match
-        setState(finalState);
-        
-        // 7. Return the created order so navigation can happen
-        return newOrder;
     };
 
-    const markOrderAsPaid = (orderId: string, paymentMethod: PaymentMethod) => {
+    const markOrderAsPaid = useCallback((orderId: string, paymentMethod: PaymentMethod) => {
         setState(prevState => {
             if (!prevState.currentUser) return prevState;
             const order = prevState.orders.find(o=>o.id === orderId);
             if (!order) return prevState;
 
-            const newLog: AuditLog = {
-                id: `log-${Date.now()}`,
-                timestamp: new Date(),
-                userId: prevState.currentUser.id,
-                userName: prevState.currentUser.name,
-                action: 'Payment',
-                details: `Order #${order.queueNumber} marked as paid with ${paymentMethod}.`,
-            };
+            addAuditLog('Payment', `Order #${order.queueNumber} marked as paid with ${paymentMethod}.`, prevState.currentUser);
 
             return { 
                 ...prevState, 
                 orders: prevState.orders.map(o => o.id === orderId ? { ...o, status: OrderStatus.Paid, paidAt: new Date(), paymentMethod } : o),
-                auditLogs: [newLog, ...prevState.auditLogs]
             }
         });
-    };
+    }, [addAuditLog]);
     
-    const updateOrderStatus = (orderId: string, status: OrderStatus) => {
+    const updateOrderStatus = useCallback((orderId: string, status: OrderStatus) => {
         setState(prevState => {
             if (!prevState.currentUser) return prevState;
             const order = prevState.orders.find(o => o.id === orderId);
             if (!order) return prevState;
 
             let newTables = prevState.tables;
-            let newAuditLogs = prevState.auditLogs;
-
-            const createLog = (action: string, details: string) => ({
-                id: `log-${Date.now()}-${Math.random()}`,
-                timestamp: new Date(),
-                userId: prevState.currentUser!.id,
-                userName: prevState.currentUser!.name,
-                action,
-                details
-            });
             
-            newAuditLogs = [createLog('Order Status Update', `Order #${order.queueNumber} status changed to ${status}.`), ...newAuditLogs];
+            addAuditLog('Order Status Update', `Order #${order.queueNumber} status changed to ${status}.`, prevState.currentUser);
             
             if ((status === OrderStatus.Served || status === OrderStatus.Cancelled) && order.qrSessionId) {
                 const session = prevState.qrSessions.find(q => q.id === order.qrSessionId);
@@ -473,7 +412,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     const table = prevState.tables.find(t => t.id === session.tableId);
                     if (table) {
                         newTables = prevState.tables.map(t => t.id === session.tableId ? { ...t, status: TableStatus.Available } : t);
-                        newAuditLogs = [createLog('Table Status', `Table ${table.name} is now available.`), ...newAuditLogs];
+                        addAuditLog('Table Status', `Table ${table.name} is now available.`, prevState.currentUser);
                     }
                 }
             }
@@ -482,10 +421,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ...prevState, 
                 orders: prevState.orders.map(o => o.id === orderId ? { ...o, status } : o),
                 tables: newTables,
-                auditLogs: newAuditLogs
             };
         });
-    };
+    }, [addAuditLog]);
 
     const cancelOrder = useCallback((orderId: string, reason: string) => {
         setState(prevState => {
@@ -493,16 +431,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const order = prevState.orders.find(o => o.id === orderId);
             if (!order || order.status !== OrderStatus.Unpaid) return prevState;
 
-            let newAuditLogs = prevState.auditLogs;
-            const createLog = (action: string, details: string) => ({
-                id: `log-${Date.now()}-${Math.random()}`,
-                timestamp: new Date(),
-                userId: prevState.currentUser!.id,
-                userName: prevState.currentUser!.name,
-                action,
-                details
-            });
-            newAuditLogs = [createLog('Order Cancellation', `Order #${order.queueNumber} cancelled. Reason: ${reason}`), ...newAuditLogs];
+            addAuditLog('Order Cancellation', `Order #${order.queueNumber} cancelled. Reason: ${reason}`, prevState.currentUser);
 
             let newTables = prevState.tables;
             let newQrSessions = prevState.qrSessions;
@@ -513,7 +442,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                      const table = prevState.tables.find(t => t.id === session.tableId);
                      if (table) {
                         newTables = prevState.tables.map(t => t.id === session.tableId ? {...t, status: TableStatus.Available} : t);
-                        newAuditLogs = [createLog('Table Status', `Table ${table.name} is now available due to cancellation.`), ...newAuditLogs];
+                        addAuditLog('Table Status', `Table ${table.name} is now available due to cancellation.`, prevState.currentUser);
                      }
                 }
                 newQrSessions = prevState.qrSessions.map(qs => qs.id === order.qrSessionId ? {...qs, status: 'expired' as const}: qs);
@@ -521,9 +450,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
             const newOrders = prevState.orders.map(o => o.id === orderId ? { ...o, status: OrderStatus.Cancelled } : o);
 
-            return { ...prevState, orders: newOrders, tables: newTables, qrSessions: newQrSessions, auditLogs: newAuditLogs };
+            return { ...prevState, orders: newOrders, tables: newTables, qrSessions: newQrSessions };
         });
-    }, []);
+    }, [addAuditLog]);
 
     const addTable = useCallback(() => {
         setState(prevState => {
@@ -531,22 +460,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const newTableNumber = prevState.tables.length > 0 ? Math.max(...prevState.tables.map(t => parseInt(t.name.replace('T', '')) || 0)) + 1 : 1;
             const newTable: Table = { id: `table-${Date.now()}`, name: `T${newTableNumber}`, status: TableStatus.Available };
             
-            const newLog: AuditLog = {
-                id: `log-${Date.now()}`,
-                timestamp: new Date(),
-                userId: prevState.currentUser.id,
-                userName: prevState.currentUser.name,
-                action: 'Table Management',
-                details: `Added new table: ${newTable.name}`,
-            };
+            addAuditLog('Table Management', `Added new table: ${newTable.name}`, prevState.currentUser);
             
             return {
                 ...prevState,
                 tables: [...prevState.tables, newTable],
-                auditLogs: [newLog, ...prevState.auditLogs]
             };
         });
-    }, []);
+    }, [addAuditLog]);
 
     const removeTable = useCallback((tableId: string) => {
         setState(prevState => {
@@ -554,23 +475,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const tableToRemove = prevState.tables.find(t => t.id === tableId);
 
             if (tableToRemove && tableToRemove.status === TableStatus.Available) {
-                const newLog: AuditLog = {
-                    id: `log-${Date.now()}`,
-                    timestamp: new Date(),
-                    userId: prevState.currentUser.id,
-                    userName: prevState.currentUser.name,
-                    action: 'Table Management',
-                    details: `Removed table: ${tableToRemove.name}`,
-                };
+                addAuditLog('Table Management', `Removed table: ${tableToRemove.name}`, prevState.currentUser);
                 return {
                     ...prevState,
                     tables: prevState.tables.filter(t => t.id !== tableId),
-                    auditLogs: [newLog, ...prevState.auditLogs]
                 };
             }
             return prevState; // No change if table is occupied or not found
         });
-    }, []);
+    }, [addAuditLog]);
 
     const forceClearTable = useCallback((tableId: string) => {
         setState(prevState => {
@@ -579,128 +492,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (!table || table.status === TableStatus.Available) return prevState;
             
             let newState = { ...prevState };
-            const createLog = (action: string, details: string) => ({
-                id: `log-${Date.now()}-${Math.random()}`,
-                timestamp: new Date(),
-                userId: prevState.currentUser!.id,
-                userName: prevState.currentUser!.name,
-                action,
-                details
-            });
-            let newLogs: AuditLog[] = [];
 
             const session = prevState.qrSessions.slice().reverse().find(q => q.tableId === tableId && q.status !== 'expired');
 
-            // If a session is found, try to cancel it or its associated order
             if (session) {
                 const order = session.orderId ? prevState.orders.find(o => o.id === session.orderId) : undefined;
 
                 if (order && order.status === OrderStatus.Unpaid) {
-                    // Cancel the unpaid order
-                    newLogs.push(createLog('Order Cancellation', `Order #${order.queueNumber} cancelled. Reason: Manually cleared by cashier.`));
-                    newLogs.push(createLog('Table Status', `Table ${table.name} is now available due to cancellation.`));
-                    
+                    addAuditLog('Order Cancellation', `Order #${order.queueNumber} cancelled. Reason: Manually cleared by cashier.`, prevState.currentUser);
+                    addAuditLog('Table Status', `Table ${table.name} is now available due to cancellation.`, prevState.currentUser);
                     newState.orders = prevState.orders.map(o => o.id === order.id ? { ...o, status: OrderStatus.Cancelled } : o);
                     newState.qrSessions = prevState.qrSessions.map(qs => qs.id === session.id ? { ...qs, status: 'expired' as const } : qs);
                     newState.tables = prevState.tables.map(t => t.id === tableId ? { ...t, status: TableStatus.Available } : t);
 
                 } else if (session.status === 'active') {
-                    // Cancel the active (but unused) QR session
-                    newLogs.push(createLog('QR Cancellation', `Cancelled QR for table ${table.name}: ${session.id}`));
+                    addAuditLog('QR Cancellation', `Cancelled QR for table ${table.name}: ${session.id}`, prevState.currentUser);
                     newState.qrSessions = prevState.qrSessions.map(qs => qs.id === session.id ? { ...qs, status: 'expired' as const } : qs);
                     newState.tables = prevState.tables.map(t => t.id === tableId ? { ...t, status: TableStatus.Available } : t);
                 
                 } else {
-                     // The order is paid or served, cannot clear
                     return prevState;
                 }
             } else {
-                 // No active/used session found, but table is occupied (inconsistent state). Force clear.
-                newLogs.push(createLog('Table Management', `Forced table ${table.name} to available (inconsistent state).`));
+                addAuditLog('Table Management', `Forced table ${table.name} to available (inconsistent state).`, prevState.currentUser);
                 newState.tables = prevState.tables.map(t => t.id === tableId ? { ...t, status: TableStatus.Available } : t);
             }
             
-            return { ...newState, auditLogs: [...newLogs, ...prevState.auditLogs] };
+            return newState;
         });
-    }, []);
+    }, [addAuditLog]);
     
-    const addMenuItem = (item: Omit<MenuItem, 'id'>) => {
+    const addMenuItem = useCallback((item: Omit<MenuItem, 'id'>) => {
         setState(prevState => {
             if (!prevState.currentUser) return prevState;
             const newItem = { ...item, id: `menu-${Date.now()}`};
-            const newLog: AuditLog = {
-                id: `log-${Date.now()}`,
-                timestamp: new Date(),
-                userId: prevState.currentUser.id,
-                userName: prevState.currentUser.name,
-                action: 'Menu Management',
-                details: `Added menu item: ${getLocalized(newItem.name)}`,
-            };
-            return { ...prevState, menuItems: [...prevState.menuItems, newItem], auditLogs: [newLog, ...prevState.auditLogs]};
+            addAuditLog('Menu Management', `Added menu item: ${getLocalized(newItem.name)}`, prevState.currentUser);
+            return { ...prevState, menuItems: [...prevState.menuItems, newItem]};
         });
-    };
+    }, [addAuditLog, getLocalized]);
 
-    const updateMenuItem = (item: MenuItem) => {
+    const updateMenuItem = useCallback((item: MenuItem) => {
         setState(prevState => {
             if (!prevState.currentUser) return prevState;
-            const newLog: AuditLog = {
-                id: `log-${Date.now()}`,
-                timestamp: new Date(),
-                userId: prevState.currentUser.id,
-                userName: prevState.currentUser.name,
-                action: 'Menu Management',
-                details: `Updated menu item: ${getLocalized(item.name)}`,
-            };
-            return { ...prevState, menuItems: prevState.menuItems.map(m => m.id === item.id ? item : m), auditLogs: [newLog, ...prevState.auditLogs]};
+            addAuditLog('Menu Management', `Updated menu item: ${getLocalized(item.name)}`, prevState.currentUser);
+            return { ...prevState, menuItems: prevState.menuItems.map(m => m.id === item.id ? item : m)};
         });
-    };
+    }, [addAuditLog, getLocalized]);
     
-    const deleteMenuItem = (itemId: string) => {
+    const deleteMenuItem = useCallback((itemId: string) => {
         setState(prevState => {
             if (!prevState.currentUser) return prevState;
             const item = prevState.menuItems.find(i => i.id === itemId);
             if (item) {
-                 const newLog: AuditLog = {
-                    id: `log-${Date.now()}`,
-                    timestamp: new Date(),
-                    userId: prevState.currentUser.id,
-                    userName: prevState.currentUser.name,
-                    action: 'Menu Management',
-                    details: `Deleted menu item: ${getLocalized(item.name)}`,
-                };
-                return { ...prevState, menuItems: prevState.menuItems.filter(m => m.id !== itemId), auditLogs: [newLog, ...prevState.auditLogs]};
+                 addAuditLog('Menu Management', `Deleted menu item: ${getLocalized(item.name)}`, prevState.currentUser);
+                return { ...prevState, menuItems: prevState.menuItems.filter(m => m.id !== itemId)};
             }
             return prevState;
         });
-    };
+    }, [addAuditLog, getLocalized]);
     
-    const updateSettings = (newSettings: Partial<Settings>) => {
+    const updateSettings = useCallback((newSettings: Partial<Settings>) => {
         setState(prevState => {
             if (!prevState.currentUser) return prevState;
-            const newLog: AuditLog = {
-                    id: `log-${Date.now()}`,
-                    timestamp: new Date(),
-                    userId: prevState.currentUser.id,
-                    userName: prevState.currentUser.name,
-                    action: 'Settings',
-                    details: `System settings updated.`,
-            };
-            return {...prevState, settings: {...prevState.settings, ...newSettings}, auditLogs: [newLog, ...prevState.auditLogs]};
+            addAuditLog('Settings', `System settings updated.`, prevState.currentUser);
+            return {...prevState, settings: {...prevState.settings, ...newSettings}};
         });
-    };
+    }, [addAuditLog]);
 
-    const clearAllData = () => {
+    const clearAllData = useCallback(() => {
         if (state.currentUser) {
             addAuditLog('System', `All application data has been cleared.`, state.currentUser);
         }
         localStorage.removeItem('pos_app_state');
-        // A slight delay to ensure the log is captured in state before reload, although localStorage persistence is primary
         setTimeout(() => window.location.reload(), 100);
-    }
+    }, [state.currentUser, addAuditLog]);
 
 
-    // Auto-cancel unpaid orders
+    // Auto-cancel unpaid orders and expire active QR sessions
     useEffect(() => {
+        if (isSharedState) return; // Don't run this timer on customer devices
         const interval = setInterval(() => {
             setState(prevState => {
                 const now = new Date();
@@ -711,19 +581,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 let newTables = [...prevState.tables];
                 let newQrSessions = [...prevState.qrSessions];
 
+                // Cancel old unpaid orders
                 prevState.orders.forEach(order => {
                     if (order.status === OrderStatus.Unpaid) {
                         const orderAgeMinutes = (now.getTime() - new Date(order.createdAt).getTime()) / (1000 * 60);
                         if (orderAgeMinutes > expiryTime) {
                             changed = true;
                             
-                            // Find and update the specific order
                             const orderIndex = newOrders.findIndex(o => o.id === order.id);
                             if (orderIndex !== -1) {
                                 newOrders[orderIndex] = { ...newOrders[orderIndex], status: OrderStatus.Cancelled };
                             }
 
-                            // If linked to a QR session and table, update them
                             if(order.qrSessionId) {
                                 const sessionIndex = newQrSessions.findIndex(qs => qs.id === order.qrSessionId);
                                 if(sessionIndex !== -1) {
@@ -742,6 +611,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     }
                 });
 
+                // Expire old active (unused) QR sessions
+                prevState.qrSessions.forEach(session => {
+                    if (session.status === 'active') { // 'active' means not yet used for an order
+                        const sessionAgeMinutes = (now.getTime() - new Date(session.createdAt).getTime()) / (1000 * 60);
+                        if (sessionAgeMinutes > expiryTime) {
+                            changed = true;
+                            const sessionIndex = newQrSessions.findIndex(s => s.id === session.id);
+                            if (sessionIndex !== -1) {
+                                newQrSessions[sessionIndex] = { ...newQrSessions[sessionIndex], status: 'expired' };
+                            }
+
+                            if (session.tableId) {
+                                const tableIndex = newTables.findIndex(t => t.id === session.tableId);
+                                if (tableIndex !== -1) {
+                                    const latestSessionForTable = prevState.qrSessions
+                                        .filter(s => s.tableId === session.tableId)
+                                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+                                    
+                                    if (latestSessionForTable && latestSessionForTable.id === session.id) {
+                                        newTables[tableIndex] = { ...newTables[tableIndex], status: TableStatus.Available };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+
                 if (changed) {
                     return { ...prevState, orders: newOrders, tables: newTables, qrSessions: newQrSessions };
                 }
@@ -750,7 +647,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
         }, 60000); // Check every minute
         return () => clearInterval(interval);
-    }, []); // Empty dependency array to run only once
+    }, [isSharedState]);
 
     return (
         <AppContext.Provider value={{ 

@@ -36,7 +36,7 @@ const AppRoutes = () => {
       <main className="flex-grow p-4 sm:p-6 lg:p-8 overflow-auto bg-slate-100 dark:bg-slate-900">
         <Routes>
           <Route path="/menu/:qrId" element={<CustomerMenu />} />
-          <Route path="/order/:orderId"element={<CustomerOrderStatus />} />
+          <Route path="/order/:orderId" element={<CustomerOrderStatus />} />
           
           {currentUser.role === UserRole.Cashier && <Route path="/" element={<CashierView />} />}
           {currentUser.role === UserRole.Kitchen && <Route path="/" element={<KDSView />} />}

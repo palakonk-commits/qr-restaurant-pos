@@ -10,7 +10,7 @@ const OrderItemTicket: React.FC<{ item: OrderItem }> = ({ item }) => {
         <div className="py-2 border-b border-slate-200 dark:border-slate-700 last:border-b-0">
             <p className="font-bold">{item.quantity}x {getLocalized(item.menuItem.name)}</p>
             <div className="pl-4 text-sm text-slate-600 dark:text-slate-400">
-                {Object.values(item.selectedOptions).map(opt => (
+                {Object.values(item.selectedOptions).flat().map(opt => (
                     <p key={getLocalized(opt.name)}>+ {getLocalized(opt.name)}</p>
                 ))}
                 {item.notes && <p className="italic text-rose-500">Notes: {item.notes}</p>}

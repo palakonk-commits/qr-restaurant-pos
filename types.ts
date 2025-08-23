@@ -77,7 +77,7 @@ export interface MenuCategory {
 export interface CartItem {
     menuItem: MenuItem;
     quantity: number;
-    selectedOptions: { [optionTitle: string]: MenuOptionItem };
+    selectedOptions: { [optionTitle: string]: MenuOptionItem[] };
     notes: string;
     totalPrice: number;
 }

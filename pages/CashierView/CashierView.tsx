@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useAppContext, encodeQrState } from '../../context/AppContext';
+import { useAppContext } from '../../context/AppContext';
 import { Order, OrderStatus, Table, TableStatus } from '../../types';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
@@ -8,6 +8,7 @@ import QRCode from "react-qr-code";
 import OrderDetails from './OrderDetails';
 import PaymentModal from './PaymentModal';
 import ConfirmationModal from '../../components/common/ConfirmationModal';
+import { getAbsoluteUrlWithState } from '../../utils/qr';
 
 const TabButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => {
     return (
@@ -72,32 +73,6 @@ const NewQRTab: React.FC = () => {
         }
         setActiveQr(null);
     };
-    
-    const getAbsoluteUrlWithState = (hashPath: string) => {
-        const { origin, pathname } = window.location;
-        const cleanPath = pathname.replace(/index\.html$/, '');
-        const baseUrl = `${origin}${cleanPath}`;
-        
-        // Create a leaner state object for the QR code to prevent overflow
-        const { qrCodeExpiryMinutes, ...customerSettings } = settings;
-        const leanMenuItems = menuItems.map(({ id, name, category, price, isOutOfStock, options }) => ({
-            id,
-            name,
-            category,
-            price,
-            isOutOfStock,
-            options,
-        }));
-
-        const qrState = {
-            menuItems: leanMenuItems,
-            menuCategories,
-            settings: customerSettings,
-        };
-        const encodedState = encodeQrState(qrState);
-
-        return `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}${hashPath}&state=${encodedState}`;
-    };
 
     const handlePrint = () => {
         if (!activeQr) return;
@@ -107,7 +82,7 @@ const NewQRTab: React.FC = () => {
     
     let qrUrl = '';
     if (activeQr) {
-        qrUrl = getAbsoluteUrlWithState(`/#/menu/${activeQr.sessionId}?`);
+        qrUrl = getAbsoluteUrlWithState(`/#/menu/${activeQr.sessionId}?`, menuItems, menuCategories, settings);
     }
 
     const selectedTable = activeQr ? tables.find(t => t.id === activeQr.tableId) : null;

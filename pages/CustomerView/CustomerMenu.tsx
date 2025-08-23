@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../../context/AppContext';
@@ -16,24 +15,52 @@ interface ItemSelectionModalProps {
 const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({ item, onAddToCart, onClose }) => {
     const { t, getLocalized } = useAppContext();
     const [quantity, setQuantity] = useState(1);
-    const [selectedOptions, setSelectedOptions] = useState<{ [optionTitle: string]: MenuOptionItem }>({});
+    const [selectedOptions, setSelectedOptions] = useState<{ [optionTitle: string]: MenuOptionItem[] }>({});
     const [notes, setNotes] = useState('');
 
+    // Pre-select first option for required options
+    useEffect(() => {
+        const initialSelections: { [optionTitle: string]: MenuOptionItem[] } = {};
+        item.options?.forEach(option => {
+            if (option.required && option.items.length > 0) {
+                initialSelections[getLocalized(option.title)] = [option.items[0]];
+            }
+        });
+        setSelectedOptions(initialSelections);
+    }, [item, getLocalized]);
+
     const handleOptionChange = (option: MenuOption, optionItem: MenuOptionItem) => {
-        setSelectedOptions(prev => ({
-            ...prev,
-            [getLocalized(option.title)]: optionItem
-        }));
+        const title = getLocalized(option.title);
+        setSelectedOptions(prev => {
+            if (option.required) {
+                return { ...prev, [title]: [optionItem] };
+            }
+            
+            // Handle checkboxes for non-required options
+            const currentSelection = prev[title] || [];
+            const isSelected = currentSelection.some(i => getLocalized(i.name) === getLocalized(optionItem.name));
+
+            if (isSelected) {
+                return { ...prev, [title]: currentSelection.filter(i => getLocalized(i.name) !== getLocalized(optionItem.name)) };
+            } else {
+                return { ...prev, [title]: [...currentSelection, optionItem] };
+            }
+        });
     };
     
     const calculateTotalPrice = () => {
         const basePrice = item.price;
-        const optionsPrice = Object.values(selectedOptions).reduce((acc, opt) => acc + opt.price, 0);
+        const optionsPrice = Object.values(selectedOptions).flat().reduce((acc, opt) => acc + opt.price, 0);
         return (basePrice + optionsPrice) * quantity;
     };
 
     const handleAddToCart = () => {
-        const isAllRequiredSelected = item.options?.every(opt => !opt.required || selectedOptions[getLocalized(opt.title)]) ?? true;
+        const isAllRequiredSelected = item.options?.every(opt => {
+            if (!opt.required) return true;
+            const selection = selectedOptions[getLocalized(opt.title)];
+            return selection && selection.length > 0;
+        }) ?? true;
+
         if (!isAllRequiredSelected) {
             alert('Please select all required options.');
             return;
@@ -60,11 +87,11 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({ item, onAddToCa
                                 <label key={getLocalized(optItem.name)} className="flex items-center justify-between p-3 rounded-lg bg-slate-100 dark:bg-slate-700 cursor-pointer has-[:checked]:bg-sky-100 has-[:checked]:dark:bg-sky-900/50 has-[:checked]:ring-2 has-[:checked]:ring-sky-500 transition-all">
                                     <div className="flex items-center">
                                         <input
-                                            type="radio"
+                                            type={option.required ? "radio" : "checkbox"}
                                             name={getLocalized(option.title)}
-                                            checked={selectedOptions[getLocalized(option.title)]?.name.en === optItem.name.en}
+                                            checked={selectedOptions[getLocalized(option.title)]?.some(i => getLocalized(i.name) === getLocalized(optItem.name))}
                                             onChange={() => handleOptionChange(option, optItem)}
-                                            className="form-radio h-5 w-5 text-sky-600 bg-white dark:bg-slate-600 border-slate-300 focus:ring-sky-500"
+                                            className={option.required ? "form-radio h-5 w-5 text-sky-600 bg-white dark:bg-slate-600 border-slate-300 focus:ring-sky-500" : "form-checkbox h-5 w-5 text-sky-600 bg-white dark:bg-slate-600 border-slate-300 rounded focus:ring-sky-500"}
                                         />
                                         <span className="ml-3 text-slate-800 dark:text-slate-200">{getLocalized(optItem.name)}</span>
                                     </div>
@@ -139,7 +166,7 @@ const CartView: React.FC<{
                     <div>
                         <p className="font-semibold">{item.quantity} x {getLocalized(item.menuItem.name)}</p>
                         <div className="pl-4 text-sm text-slate-500 dark:text-slate-400">
-                            {Object.values(item.selectedOptions).map(opt => <p key={getLocalized(opt.name)}>+ {getLocalized(opt.name)}</p>)}
+                            {Object.values(item.selectedOptions).flat().map(opt => <p key={getLocalized(opt.name)}>+ {getLocalized(opt.name)}</p>)}
                             {item.notes && <p className='italic'>"{item.notes}"</p>}
                         </div>
                     </div>
@@ -167,20 +194,14 @@ const CartView: React.FC<{
 const CustomerMenu: React.FC = () => {
     const { qrId } = useParams();
     const navigate = useNavigate();
-    const { menuItems, menuCategories, getQrSession, createOrderFromCart, t, getLocalized } = useAppContext();
-    const [isValidSession, setIsValidSession] = useState<boolean | null>(null);
+    const { menuItems, menuCategories, createOrderFromCart, t, getLocalized } = useAppContext();
+    const [isValidSession, setIsValidSession] = useState<boolean>(true);
     const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
     const [cart, setCart] = useState<CartItem[]>([]);
     const [serviceType, setServiceType] = useState<ServiceType>(ServiceType.DineIn);
 
-    useEffect(() => {
-        const session = getQrSession(qrId!);
-        if (session && session.status === 'active') {
-            setIsValidSession(true);
-        } else {
-            setIsValidSession(false);
-        }
-    }, [qrId, getQrSession]);
+    // The session is now validated only when the order is confirmed.
+    // This prevents the premature "Invalid QR" error and allows customers to view the menu.
 
     const categorizedMenu = useMemo(() => {
         return menuCategories.map(category => ({
@@ -200,17 +221,21 @@ const CustomerMenu: React.FC = () => {
 
     const handleConfirmOrder = () => {
         if (cart.length === 0) return;
-        const order = createOrderFromCart(qrId!, cart, serviceType);
+        if (!qrId) {
+            alert('Error: Missing QR session ID.');
+            setIsValidSession(false);
+            return;
+        }
+        const order = createOrderFromCart(qrId, cart, serviceType);
         if (order) {
             navigate(`/order/${order.id}`);
         } else {
-            alert('Failed to create order. Session might be invalid.');
+            alert('Failed to create order. Session might be invalid or expired.');
             setIsValidSession(false);
         }
     };
     
-    if (isValidSession === null) return <div className="text-center p-10">{t('loading')}</div>;
-    if (!isValidSession) return <div className="text-center p-10 text-rose-500">Error: Invalid or expired QR code.</div>;
+    if (!isValidSession) return <div className="text-center p-10 text-rose-500">Error: Invalid or expired QR code. Please ask staff for a new one.</div>;
 
     return (
         <div className="flex flex-col md:flex-row h-screen bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200">

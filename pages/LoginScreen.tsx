@@ -6,16 +6,18 @@ import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
-const PinInput: React.FC<{ onPinComplete: (pin: string) => void; onCancel: () => void }> = ({ onPinComplete, onCancel }) => {
+const PinInput: React.FC<{ onPinComplete: (pin: string) => void; onCancel: () => void; onPinTyping?: () => void; }> = ({ onPinComplete, onCancel, onPinTyping }) => {
     const [pin, setPin] = useState('');
     const { t } = useAppContext();
 
     const handlePinClick = (num: string) => {
+        if (onPinTyping) onPinTyping();
         if (pin.length < 4) {
             setPin(pin + num);
         }
     };
     const handleBackspace = () => {
+        if (onPinTyping) onPinTyping();
         setPin(pin.slice(0, -1));
     };
     const handleSubmit = () => {
@@ -72,6 +74,11 @@ const LoginScreen: React.FC = () => {
       }
     }
   };
+  
+  const handleCloseModal = () => {
+      setSelectedUser(null);
+      setError('');
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 p-4">
@@ -98,14 +105,15 @@ const LoginScreen: React.FC = () => {
       
       <Modal 
         isOpen={!!selectedUser} 
-        onClose={() => setSelectedUser(null)} 
+        onClose={handleCloseModal} 
         title={`${t('enterPin')} for ${selectedUser?.name}`}
       >
         <div>
             {error && <p className="text-rose-500 text-center mb-4">{error}</p>}
             <PinInput 
                 onPinComplete={handlePinSubmit}
-                onCancel={() => setSelectedUser(null)}
+                onCancel={handleCloseModal}
+                onPinTyping={() => setError('')}
             />
         </div>
       </Modal>

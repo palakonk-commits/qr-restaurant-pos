@@ -18,9 +18,9 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({ order }) => {
             <div>
               <p className="font-semibold">{item.quantity} x {getLocalized(item.menuItem.name)}</p>
               <div className="pl-4 text-sm text-slate-500 dark:text-slate-400">
-                {Object.entries(item.selectedOptions).map(([key, value]) => (
-                    <p key={key}>+ {getLocalized(value.name)}</p>
-                ))}
+                {Object.entries(item.selectedOptions).flatMap(([key, values]) => 
+                    values.map(value => <p key={key + getLocalized(value.name)}>+ {getLocalized(value.name)}</p>)
+                )}
                 {item.notes && <p className="italic">Notes: {item.notes}</p>}
               </div>
             </div>

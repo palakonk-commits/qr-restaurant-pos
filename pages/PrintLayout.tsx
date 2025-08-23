@@ -2,13 +2,13 @@
 import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCode from 'react-qr-code';
-import { useAppContext, encodeQrState } from '../context/AppContext';
-import { AppState } from '../types';
+import { useAppContext } from '../context/AppContext';
+import { getAbsoluteUrlWithState } from '../utils/qr';
 
 const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) => {
     const { sessionId, orderId } = useParams();
     const context = useAppContext();
-    const { getQrSession, orders, settings, getLocalized, t, tables, menuItems, menuCategories } = context;
+    const { getQrSession, orders, settings, getLocalized, tables, menuItems, menuCategories } = context;
 
     useEffect(() => {
         setTimeout(() => {
@@ -17,32 +17,6 @@ const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) =
         }, 500); // Delay to ensure content is rendered
     }, []);
 
-    const getAbsoluteUrlWithState = (hashPath: string) => {
-        const { origin, pathname } = window.location;
-        const cleanPath = pathname.replace(/index\.html$/, '');
-        const baseUrl = `${origin}${cleanPath}`;
-
-        // Create a leaner state object for the QR code to prevent overflow
-        const { qrCodeExpiryMinutes, ...customerSettings } = settings;
-        const leanMenuItems = menuItems.map(({ id, name, category, price, isOutOfStock, options }) => ({
-            id,
-            name,
-            category,
-            price,
-            isOutOfStock,
-            options,
-        }));
-
-        const qrState = {
-            menuItems: leanMenuItems,
-            menuCategories,
-            settings: customerSettings,
-        };
-        const encodedState = encodeQrState(qrState);
-        
-        return `${baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl}${hashPath}&state=${encodedState}`;
-    };
-
 
     const renderContent = () => {
         if (printType === 'qr' && sessionId) {
@@ -50,7 +24,7 @@ const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) =
             const table = session?.tableId ? tables.find(t => t.id === session.tableId) : null;
             if (!session) return <div>Invalid Session ID</div>;
             
-            const qrUrl = getAbsoluteUrlWithState(`/#/menu/${session.id}?`);
+            const qrUrl = getAbsoluteUrlWithState(`/#/menu/${session.id}?`, menuItems, menuCategories, settings);
 
             return (
                 <div className="text-center">
@@ -100,7 +74,7 @@ const PrintLayout: React.FC<{ printType: 'qr' | 'receipt' }> = ({ printType }) =
                                         <td>{getLocalized(item.menuItem.name)}</td>
                                         <td className="text-right">{item.menuItem.price.toFixed(2)}</td>
                                     </tr>
-                                    {Object.values(item.selectedOptions).map(opt => (
+                                    {Object.values(item.selectedOptions).flat().map(opt => (
                                         <tr key={getLocalized(opt.name)}>
                                             <td></td>
                                             <td className='pl-2'>+ {getLocalized(opt.name)}</td>
