@@ -289,6 +289,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
     }, [isSharedState, processOrderRequests]);
 
+    // Robust Polling for customer devices to ensure state synchronization
+    useEffect(() => {
+        if (!isSharedState) return;
+
+        const POLLING_INTERVAL = 2500;
+        let lastKnownState = '';
+
+        const poller = setInterval(() => {
+            try {
+                const savedStateRaw = localStorage.getItem('pos_app_state');
+
+                if (savedStateRaw && savedStateRaw !== lastKnownState) {
+                    lastKnownState = savedStateRaw;
+                    
+                    const parsed = JSON.parse(savedStateRaw);
+                    const parsedOrders = parsed.orders.map((o: Order) => ({ ...o, createdAt: new Date(o.createdAt), paidAt: o.paidAt ? new Date(o.paidAt) : undefined }));
+
+                    setState(prevState => {
+                        // Only update if the orders array has actually changed
+                        if (JSON.stringify(prevState.orders) !== JSON.stringify(parsedOrders)) {
+                            return { ...prevState, orders: parsedOrders };
+                        }
+                        return prevState;
+                    });
+                }
+            } catch (e) {
+                console.error("Polling error in AppContext:", e);
+            }
+        }, POLLING_INTERVAL);
+
+        return () => clearInterval(poller);
+    }, [isSharedState]);
+
 
     const login = (userId: string, pin: string): boolean => {
         const user = state.users.find(u => u.id === userId && u.pin === pin);
